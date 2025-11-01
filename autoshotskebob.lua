@@ -118,7 +118,7 @@ function AutoShoot.Init(UI, Core, notify)
             local edges = {{1,2},{2,3},{3,4},{4,1},{5,6},{6,7},{7,8},{8,5},{1,5},{2,6},{3,7},{4,8}}
             for i, edge in ipairs(edges) do
                 local a, b = corners[edge[1]], corners[edge[2]]
-                local aScreen, aVis = = Camera:WorldToViewportPoint(a)
+                local aScreen, aVis = Camera:WorldToViewportPoint(a)
                 local bScreen, bVis = Camera:WorldToViewportPoint(b)
                 local line = cube[i]
                 if line and aVis and bVis and aScreen.Z > 0 and bScreen.Z > 0 then
