@@ -79,7 +79,7 @@ function AutoShoot.Init(UI, Core, notify)
     end
     SetupGUI()
 
-    -- === КЕЙБИНД (ТОЛЬКО ПРИ СМЕНЕ) ===
+    -- === КЕЙБИНД ===
     local function GetKeyName(key)
         if key == Enum.KeyCode.Unknown then return "None" end
         local name = tostring(key):match("KeyCode%.(.+)") or tostring(key)
@@ -115,7 +115,10 @@ function AutoShoot.Init(UI, Core, notify)
     InitializeCubes()
 
     local function DrawOrientedCube(cube, cframe, size)
-        if not cframe or not size then for _, line in ipairs(cube) do line.Visible = false end return end
+        if not cframe or not size then
+            for _, line in ipairs(cube) do line.Visible = false end
+            return
+        end
         local half = size / 2
         local corners = {
             cframe * Vector3.new(-half.X, -half.Y, -half.Z), cframe * Vector3.new(half.X, -half.Y, -half.Z),
@@ -217,7 +220,7 @@ function AutoShoot.Init(UI, Core, notify)
         return height
     end
 
-    -- === ЦЕЛЬ ===
+    -- === ЦЕЛЬ (ИСПРАВЛЕНО: power всегда есть) ===
     local TargetPoint, ShootDir, ShootVel, CurrentSpin, CurrentPower, CurrentType, NoSpinPoint
     local function CalculateTarget()
         local width = UpdateGoal()
@@ -233,34 +236,35 @@ function AutoShoot.Init(UI, Core, notify)
         for name, cfg in pairs(State.AutoShoot.Attacks) do
             if not cfg.Enabled.Value or dist < cfg.MinDist or dist > math.min(cfg.MaxDist, State.AutoShoot.MaxDistance.Value) then continue end
             local spin = cfg.Spin and (dist >= 110 or name == "CloseSpin") and "Left" or "None"
-            local power = cfg.Power or math.clamp(State.AutoShoot.MinPower.Value + dist * State.AutoShoot.PowerPerStud.Value, State.AutoShoot.MinPower.Value, State.AutoShoot.MaxPower.Value)
+            local power = cfg.Power or (cfg.PowerMin or State.AutoShoot.MinPower.Value) + (cfg.PowerAdd or 0)
+            if not cfg.Power then
+                power = math.clamp(State.AutoShoot.MinPower.Value + dist * State.AutoShoot.PowerPerStud.Value, State.AutoShoot.MinPower.Value, State.AutoShoot.MaxPower.Value)
+            end
             local height = CalculateTrajectoryHeight(dist, power, name, false)
             local worldPos = GoalCFrame * Vector3.new(0, height, 0)
             table.insert(candidates, { pos=worldPos, spin=spin, power=power, name=name })
         end
 
-        if #candidates > 0 then
-            local selected = candidates[1]
-            TargetPoint = selected.pos
-            CurrentSpin = selected.spin
-            CurrentType = selected.name
-            CurrentPower = selected.power
-            ShootDir = (TargetPoint - startPos).Unit
-            ShootVel = ShootDir * (power * 1400)
-            Gui.Target.Text = "Target: " .. selected.name
-            Gui.Power.Text = "Power: " .. string.format("%.2f", power)
-            Gui.Spin.Text = "Spin: " .. selected.spin
-        end
+        if #candidates == 0 then return end
+        local selected = candidates[1]
+        TargetPoint = selected.pos
+        CurrentSpin = selected.spin
+        CurrentType = selected.name
+        CurrentPower = selected.power
+        ShootDir = (TargetPoint - startPos).Unit
+        ShootVel = ShootDir * (selected.power * 1400)  -- ИСПРАВЛЕНО: selected.power
+        Gui.Target.Text = "Target: " .. selected.name
+        Gui.Power.Text = "Power: " .. string.format("%.2f", selected.power)
+        Gui.Spin.Text = "Spin: " .. selected.spin
     end
 
     -- === СТРЕЛЬБА ===
     local CanShoot = true
     local LastShoot = 0
     local function TryShoot()
-        if not State.AutoShoot.Enabled.Value then return end
+        if not State.AutoShoot.Enabled.Value or not TargetPoint or not CurrentPower then return end
         local ball = Workspace:FindFirstChild("ball")
         if not ball or not ball:FindFirstChild("playerWeld") or ball.creator.Value ~= LocalPlayer then return end
-        if not TargetPoint then return end
 
         if State.AutoShoot.Legit.Value and not IsAnimating then
             IsAnimating = true
@@ -278,7 +282,7 @@ function AutoShoot.Init(UI, Core, notify)
         end
     end
 
-    -- === РУЧНАЯ СТРЕЛЬБА (ТОЛЬКО ПРИ НАЖАТИИ) ===
+    -- === РУЧНАЯ СТРЕЛЬБА ===
     UserInputService.InputBegan:Connect(function(inp, gp)
         if gp or not State.AutoShoot.Enabled.Value or not State.AutoShoot.ManualShot.Value then return end
         if inp.KeyCode == State.AutoShoot.ShootKey.Value and CanShoot then
@@ -293,8 +297,7 @@ function AutoShoot.Init(UI, Core, notify)
 
     -- === АВТО СТРЕЛЬБА ===
     local function AutoShoot()
-        if State.AutoShoot.ManualShot.Value or not State.AutoShoot.Enabled.Value then return end
-        if tick() - LastShoot < 0.3 then return end
+        if State.AutoShoot.ManualShot.Value or not State.AutoShoot.Enabled.Value or tick() - LastShoot < 0.3 then return end
         CalculateTarget()
         if TargetPoint then TryShoot() end
     end
@@ -327,11 +330,14 @@ function AutoShoot.Init(UI, Core, notify)
         RShootAnim.Priority = Enum.AnimationPriority.Action4
         GoalCFrame = nil
         TargetPoint = nil
+        NoSpinPoint = nil
+        IsAnimating = false
+        CanShoot = true
         InitializeCubes()
         UpdateModeText()
     end)
 
-    -- === UI (КАК В TargetESP) ===
+    -- === UI ===
     local uiElements = {}
     local section = UI.Tabs.Main:Section({Name = 'Auto Shoot', Side = 'Left'})
 
@@ -415,16 +421,16 @@ function AutoShoot.Init(UI, Core, notify)
     uiElements.PowerPerStud = section:Slider({ Name = "Power/Stud", Minimum = 0.01, Maximum = 0.1, Default = State.AutoShoot.PowerPerStud.Default, Precision = 3, Callback = function(v) State.AutoShoot.PowerPerStud.Value = v end }, 'PowerPerStud')
 
     -- === УНИЧТОЖЕНИЕ (БЕЗ ОШИБОК) ===
-    function AutoShoot:Destroy()
+    function AutoShoot.Destroy()
         for _, cube in ipairs({TargetCube, GoalCube, NoSpinCube}) do
             for _, line in ipairs(cube) do
-                if line and line.Remove then
+                if line and typeof(line) == "Instance" and line.Remove then
                     line:Remove()
                 end
             end
         end
         for _, v in pairs(Gui) do
-            if v and v.Remove then
+            if v and typeof(v) == "Instance" and v.Remove then
                 v:Remove()
             end
         end
