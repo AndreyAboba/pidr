@@ -472,124 +472,135 @@ function AutoShoot.Init(UI, Core, notify)
     LocalPlayer.CharacterAdded:Connect(connectCharacter)
     if LocalPlayer.Character then connectCharacter(LocalPlayer.Character) end
 
-    -- === UI (MacLib: используем Main tab, создаём секцию AutoShoot если нет) ===
-    local autoShootSection
-    if UI.Sections.AutoShoot then
-        autoShootSection = UI.Sections.AutoShoot
-    else
-        local mainTab = UI.Tabs.Main
-        if not mainTab then
-            warn("MacLib: Tab 'Main' не найден. Создайте его вручную или проверьте структуру UI.")
-            return
-        end
-        autoShootSection = mainTab:AddSection("AutoShoot")  -- MacLib использует AddSection у Tab
-        UI.Sections.AutoShoot = autoShootSection
+-- === UI (MacLib: используем Main tab, создаём секцию AutoShoot если нет) ===
+local autoShootSection
+if UI.Sections.AutoShoot then
+    autoShootSection = UI.Sections.AutoShoot
+else
+    local mainTab = UI.Tabs.Main
+    if not mainTab then
+        warn("MacLib: Tab 'Main' не найден. Создайте его вручную или проверьте структуру UI.")
+        return
     end
+    autoShootSection = mainTab:Section({ Name = "AutoShoot", Side = "Left" })  -- как в TargetESP
+    UI.Sections.AutoShoot = autoShootSection
+end
 
-    -- MacLib: элементы вызываются напрямую у секции: Toggle, Slider, Keybind, Divider
-    autoShootSection:Header({ Text = "Auto Shoot" })  -- или SubLabel, если нет Header
-    autoShootSection:SubLabel({ Text = "Автоматический/ручной выстрел с интеллектуальной траекторией" })
+-- === Заголовки (как в TargetESP) ===
+autoShootSection:Header({ Name = "Auto Shoot" })
+autoShootSection:SubLabel({ Text = "Автоматический/ручной выстрел с интеллектуальной траекторией" })
 
-    uiElements.Enabled = autoShootSection:Toggle({
-        Text = "Включено",
-        Default = State.AutoShoot.Enabled.Default,
-        Callback = function(value)
-            State.AutoShoot.Enabled.Value = value
-            notify("AutoShoot", value and "AutoShoot включён" or "AutoShoot выключен", true)
-        end
-    })
-
-    uiElements.ManualShot = autoShootSection:Toggle({
-        Text = "Ручной режим",
-        Default = State.AutoShoot.ManualShot.Default,
-        Callback = function(value)
-            State.AutoShoot.ManualShot.Value = value
-            notify("AutoShoot", value and "Ручной режим (клавиша)" or "Автоматический режим", true)
-        end
-    })
-
-    uiElements.ShootKey = autoShootSection:Keybind({
-        Text = "Клавиша выстрела",
-        Default = State.AutoShoot.ShootKey.Default,
-        Callback = function(key)
-            State.AutoShoot.ShootKey.Value = key
-            notify("AutoShoot", "Клавиша выстрела: " .. GetKeyName(key), false)
-        end,
-        Fallback = function()
-            if State.AutoShoot.ManualShot.Value and CanShoot then
-                pcall(CalculateTarget)
-                TryShoot()
-            end
-        end
-    })
-
-    autoShootSection:Divider()
-
-    uiElements.Legit = autoShootSection:Toggle({
-        Text = "Легит анимация",
-        Default = State.AutoShoot.Legit.Default,
-        Callback = function(value)
-            State.AutoShoot.Legit.Value = value
-            notify("AutoShoot", value and "Легит анимация включена" or "Легит анимация выключена", false)
-        end
-    })
-
-    uiElements.AutoPickup = autoShootSection:Toggle({
-        Text = "Автоподбор",
-        Default = State.AutoShoot.AutoPickup.Default,
-        Callback = function(value)
-            State.AutoShoot.AutoPickup.Value = value
-        end
-    })
-
-    uiElements.PickupDist = autoShootSection:Slider({
-        Text = "Дистанция подбора",
-        Min = 50, Max = 300, Default = State.AutoShoot.PickupDist.Default,
-        Callback = function(value)
-            State.AutoShoot.PickupDist.Value = value
-        end
-    })
-
-    autoShootSection:Divider()
-    autoShootSection:SubLabel({ Text = "Основные параметры" })
-
-    uiElements.MaxDistance = autoShootSection:Slider({
-        Text = "Макс. дистанция",
-        Min = 100, Max = 300, Default = State.AutoShoot.MaxDistance.Default,
-        Callback = function(value)
-            State.AutoShoot.MaxDistance.Value = value
-        end
-    })
-
-    uiElements.MinPower = autoShootSection:Slider({
-        Text = "Мин. сила",
-        Min = 1.0, Max = 10.0, Default = State.AutoShoot.MinPower.Default,
-        Increment = 0.1,
-        Callback = function(value)
-            State.AutoShoot.MinPower.Value = value
-        end
-    })
-
-    uiElements.MaxPower = autoShootSection:Slider({
-        Text = "Макс. сила",
-        Min = 5.0, Max = 15.0, Default = State.AutoShoot.MaxPower.Default,
-        Increment = 0.1,
-        Callback = function(value)
-            State.AutoShoot.MaxPower.Value = value
-        end
-    })
-
-    autoShootSection:Divider()
-    autoShootSection:SubLabel({ Text = "Атаки" })
-    for attackName, cfg in pairs(State.AutoShoot.Attacks) do
-        uiElements[attackName] = autoShootSection:Toggle({
-            Text = attackName,
-            Default = cfg.Enabled.Default,
-            Callback = function(value)
-                cfg.Enabled.Value = value
-            end
-        })
+uiElements.Enabled = autoShootSection:Toggle({
+    Name = "Включено",
+    Default = State.AutoShoot.Enabled.Default,
+    Callback = function(value)
+        State.AutoShoot.Enabled.Value = value
+        notify("AutoShoot", value and "AutoShoot включён" or "AutoShoot выключен", true)
     end
+})
+
+uiElements.ManualShot = autoShootSection:Toggle({
+    Name = "Ручной режим",
+    Default = State.AutoShoot.ManualShot.Default,
+    Callback = function(value)
+        State.AutoShoot.ManualShot.Value = value
+        notify("AutoShoot", value and "Ручной режим (клавиша)" or "Автоматический режим", true)
+    end
+})
+
+uiElements.ShootKey = autoShootSection:Keybind({
+    Name = "Клавиша выстрела",
+    Default = State.AutoShoot.ShootKey.Default,
+    Callback = function(key)
+        State.AutoShoot.ShootKey.Value = key
+        notify("AutoShoot", "Клавиша выстрела: " .. GetKeyName(key), false)
+    end,
+    Fallback = function()
+        if State.AutoShoot.ManualShot.Value and CanShoot then
+            pcall(CalculateTarget)
+            TryShoot()
+        end
+    end
+})
+
+autoShootSection:Divider()
+
+uiElements.Legit = autoShootSection:Toggle({
+    Name = "Легит анимация",
+    Default = State.AutoShoot.Legit.Default,
+    Callback = function(value)
+        State.AutoShoot.Legit.Value = value
+        notify("AutoShoot", value and "Легит анимация включена" or "Легит анимация выключена", false)
+    end
+})
+
+uiElements.AutoPickup = autoShootSection:Toggle({
+    Name = "Автоподбор",
+    Default = State.AutoShoot.AutoPickup.Default,
+    Callback = function(value)
+        State.AutoShoot.AutoPickup.Value = value
+    end
+})
+
+uiElements.PickupDist = autoShootSection:Slider({
+    Name = "Дистанция подбора",
+    Minimum = 50,
+    Maximum = 300,
+    Default = State.AutoShoot.PickupDist.Default,
+    Precision = 0,
+    Callback = function(value)
+        State.AutoShoot.PickupDist.Value = value
+    end
+})
+
+autoShootSection:Divider()
+autoShootSection:SubLabel({ Text = "Основные параметры" })
+
+uiElements.MaxDistance = autoShootSection:Slider({
+    Name = "Макс. дистанция",
+    Minimum = 100,
+    Maximum = 300,
+    Default = State.AutoShoot.MaxDistance.Default,
+    Precision = 0,
+    Callback = function(value)
+        State.AutoShoot.MaxDistance.Value = value
+    end
+})
+
+uiElements.MinPower = autoShootSection:Slider({
+    Name = "Мин. сила",
+    Minimum = 1.0,
+    Maximum = 10.0,
+    Default = State.AutoShoot.MinPower.Default,
+    Precision = 1,
+    Callback = function(value)
+        State.AutoShoot.MinPower.Value = value
+    end
+})
+
+uiElements.MaxPower = autoShootSection:Slider({
+    Name = "Макс. сила",
+    Minimum = 5.0,
+    Maximum = 15.0,
+    Default = State.AutoShoot.MaxPower.Default,
+    Precision = 1,
+    Callback = function(value)
+        State.AutoShoot.MaxPower.Value = value
+    end
+})
+
+autoShootSection:Divider()
+autoShootSection:SubLabel({ Text = "Атаки" })
+
+for attackName, cfg in pairs(State.AutoShoot.Attacks) do
+    uiElements[attackName] = autoShootSection:Toggle({
+        Name = attackName,
+        Default = cfg.Enabled.Default,
+        Callback = function(value)
+            cfg.Enabled.Value = value
+        end
+    })
+end
 
     function AutoShoot:Destroy()
         for i = 1, 12 do
@@ -603,3 +614,4 @@ function AutoShoot.Init(UI, Core, notify)
 end
 
 return AutoShoot
+
