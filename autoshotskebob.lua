@@ -539,11 +539,9 @@ local function SetupUI(UI)
 end
 
 -- === INIT & DESTROY ===
-function AutoShootModule.Init(UI, coreParam, notifyFunc)
-    core = coreParam
-    Services = core.Services
-    PlayerData = core.PlayerData
-    notify = notifyFunc
+function AutoShootModule.Init(UI, Core, notify)
+    Services = Core.Services
+    PlayerData = Core.PlayerData
     LocalPlayerObj = PlayerData.LocalPlayer
 
     SetupUI(UI)
@@ -571,3 +569,4 @@ function AutoShootModule:Destroy()
 end
 
 return AutoShootModule
+
