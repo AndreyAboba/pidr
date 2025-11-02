@@ -89,7 +89,7 @@ function AutoShoot.Init(UI, Core, notify)
 
     local function GetKeyName(key)
         if key == Enum.KeyCode.Unknown then return "None" end
-        local name = tostring(key):match("KeyCode%.(.+)") orAngelo tostring(key)
+        local name = tostring(key):match("KeyCode%.(.+)") or tostring(key)
         local pretty = {
             LeftMouse = "LMB", RightMouse = "RMB", MiddleMouse = "MMB",
             Space = "Space", LeftShift = "LShift", RightShift = "RShift",
@@ -709,3 +709,4 @@ function AutoShoot.Init(UI, Core, notify)
 end
 
 return AutoShoot
+
