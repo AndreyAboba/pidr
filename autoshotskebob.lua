@@ -423,8 +423,11 @@ function AutoShoot.Init(UI, Core, notify)
         Gui.Spin.Text = string.format("Spin: %s", spin)
     end
 
-    local function TryShoot()
-        if not IsEnabled() then return end
+    -- === ManualMode.start / ManualMode.stop ===
+    local ManualMode = {}
+    function ManualMode.start()
+        if not IsEnabled() or not State.AutoShoot.ManualShot.Value or not CanShoot then return end
+        pcall(CalculateTarget)
         local ball = Workspace:FindFirstChild("ball")
         local hasBall = ball and ball:FindFirstChild("playerWeld") and ball.creator.Value == LocalPlayer
         if not hasBall or not TargetPoint or not ShootDir then return end
@@ -438,41 +441,53 @@ function AutoShoot.Init(UI, Core, notify)
             task.delay(AnimationHoldTime, function() IsAnimating = false end)
         end
 
-        local success = pcall(function()
-            Shooter:FireServer(ShootDir, BallAttachment.CFrame, CurrentPower, ShootVel, false, false, CurrentSpin, nil, false)
+        local ok = pcall(function()
+            Shooter:FireServer(ShootDir, BallAttachment.CFrame, CurrentPower, ShootVel,
+                               false, false, CurrentSpin, nil, false)
         end)
-        if success then
-            Gui.Status.Text = string.format("%s SHOT! [%s]", State.AutoShoot.ManualShot.Value and "MANUAL" or "AUTO", CurrentType)
+
+        if ok then
+            Gui.Status.Text = string.format("MANUAL SHOT! [%s]", CurrentType)
             Gui.Status.Color = Color3.fromRGB(0,255,0)
             LastShoot = tick()
             CanShoot = false
             task.delay(0.3, function() CanShoot = true end)
+            notify("AutoShoot", Gui.Status.Text, true)
         end
     end
 
-    -- === ManualMode.start / ManualMode.stop ===
-    local ManualMode = {}
-    function ManualMode.start()
-        if not IsEnabled() or not State.AutoShoot.ManualShot.Value then return end
-        if CanShoot then
-            pcall(CalculateTarget)
-            TryShoot()
-        end
-    end
-
-    function ManualMode.stop()
-        -- Ничего не делаем
-    end
-
-    -- === Keybind: ManualMode.start/stop ===
-    uiElements.ShootKey = nil -- Будет создан ниже
+    function ManualMode.stop() end  -- пустой, но обязателен
 
     -- === Auto Shoot Loop ===
     local function AutoShootLoop()
         if not IsEnabled() or State.AutoShoot.ManualShot.Value then return end
         if tick() - LastShoot < 0.3 then return end
         pcall(CalculateTarget)
-        TryShoot()
+
+        local ball = Workspace:FindFirstChild("ball")
+        local hasBall = ball and ball:FindFirstChild("playerWeld") and ball.creator.Value == LocalPlayer
+        if not hasBall or not TargetPoint or not ShootDir then return end
+
+        local dist = GoalCFrame and (HumanoidRootPart.Position - GoalCFrame.Position).Magnitude or 999
+        if dist > State.AutoShoot.MaxDistance.Value then return end
+
+        if State.AutoShoot.Legit.Value and not IsAnimating then
+            IsAnimating = true
+            RShootAnim:Play()
+            task.delay(AnimationHoldTime, function() IsAnimating = false end)
+        end
+
+        local ok = pcall(function()
+            Shooter:FireServer(ShootDir, BallAttachment.CFrame, CurrentPower, ShootVel,
+                               false, false, CurrentSpin, nil, false)
+        end)
+
+        if ok then
+            Gui.Status.Text = string.format("AUTO SHOT! [%s]", CurrentType)
+            Gui.Status.Color = Color3.fromRGB(0,255,0)
+            LastShoot = tick()
+            notify("AutoShoot", Gui.Status.Text, true)
+        end
     end
 
     -- === RenderStepped ===
@@ -612,6 +627,9 @@ function AutoShoot.Init(UI, Core, notify)
         Callback = function(value)
             State.AutoShoot.Enabled.Value = value
             notify("AutoShoot", value and "Enabled" or "Disabled", true)
+            if uiElements.ShootKey then
+                uiElements.ShootKey:SetEnabled(value and State.AutoShoot.ManualShot.Value)
+            end
         end
     })
 
@@ -622,6 +640,9 @@ function AutoShoot.Init(UI, Core, notify)
             State.AutoShoot.ManualShot.Value = value
             notify("AutoShoot", value and "Manual Mode (Key)" or "Auto Mode", true)
             UpdateModeText()
+            if uiElements.ShootKey then
+                uiElements.ShootKey:SetEnabled(value and State.AutoShoot.Enabled.Value)
+            end
         end
     })
 
@@ -709,4 +730,3 @@ function AutoShoot.Init(UI, Core, notify)
 end
 
 return AutoShoot
-
