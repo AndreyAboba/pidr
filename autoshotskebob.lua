@@ -66,7 +66,7 @@ function AutoShoot.Init(UI, Core, notify)
     local CanShoot = true
     local LastShoot = 0
 
-    -- === DRAWING GUI (как в v35.43) ===
+    -- === DRAWING GUI ===
     local Gui = {
         Status = Drawing.new("Text"), Dist = Drawing.new("Text"), Target = Drawing.new("Text"),
         Power = Drawing.new("Text"), Spin = Drawing.new("Text"), GK = Drawing.new("Text"),
@@ -423,7 +423,7 @@ function AutoShoot.Init(UI, Core, notify)
         Gui.Spin.Text = string.format("Spin: %s", spin)
     end
 
-    -- === ManualMode.start / ManualMode.stop ===
+    -- === ManualMode (точно как в MovementEnhancements) ===
     local ManualMode = {}
     function ManualMode.start()
         if not IsEnabled() or not State.AutoShoot.ManualShot.Value or not CanShoot then return end
@@ -455,8 +455,7 @@ function AutoShoot.Init(UI, Core, notify)
             notify("AutoShoot", Gui.Status.Text, true)
         end
     end
-
-    function ManualMode.stop() end  -- пустой, но обязателен
+    function ManualMode.stop() end  -- обязателен, но пустой
 
     -- === Auto Shoot Loop ===
     local function AutoShootLoop()
@@ -550,7 +549,7 @@ function AutoShoot.Init(UI, Core, notify)
         AutoShootLoop()
     end)
 
-    -- === AutoPickup (отдельная секция) ===
+    -- === AutoPickup ===
     local autoPickupSection = UI.Sections.AutoPickup
     if autoPickupSection then
         autoPickupSection:Header({ Name = "Auto Pickup" })
@@ -573,12 +572,10 @@ function AutoShoot.Init(UI, Core, notify)
                 State.AutoShoot.PickupDist.Value = value
             end
         })
-    else
-        warn("MacLib: Section 'AutoPickup' not found.")
     end
 
     RunService.Heartbeat:Connect(function()
-        if not IsEnabled() or not State.AutoShoot.AutoPickup.Value or not autoPickupSection then return end
+        if not IsEnabled() or not State.AutoShoot.AutoPickup.Value then return end
         local ball = Workspace:FindFirstChild("ball")
         if not ball or ball:FindFirstChild("playerWeld") or (HumanoidRootPart.Position - ball.Position).Magnitude > State.AutoShoot.PickupDist.Value then return end
         if PickupRemote then pcall(function() PickupRemote:FireServer(State.AutoShoot.SpoofValue.Value) end) end
@@ -604,19 +601,9 @@ function AutoShoot.Init(UI, Core, notify)
     LocalPlayer.CharacterAdded:Connect(connectCharacter)
     if LocalPlayer.Character then connectCharacter(LocalPlayer.Character) end
 
-    -- === AutoShoot Section ===
-    local autoShootSection
-    if UI.Sections.AutoShoot then
-        autoShootSection = UI.Sections.AutoShoot
-    else
-        local mainTab = UI.Tabs.Main
-        if not mainTab then
-            warn("MacLib: Tab 'Main' not found.")
-            return
-        end
-        autoShootSection = mainTab:Section({ Name = "AutoShoot", Side = "Left" })
-        UI.Sections.AutoShoot = autoShootSection
-    end
+    -- === AutoShoot UI Section ===
+    local autoShootSection = UI.Sections.AutoShoot or (UI.Tabs.Main and UI.Tabs.Main:Section({ Name = "AutoShoot", Side = "Left" })) or error("No Main tab")
+    UI.Sections.AutoShoot = autoShootSection
 
     autoShootSection:Header({ Name = "Auto Shoot" })
     autoShootSection:SubLabel({ Text = "Smart auto/manual shot with trajectory prediction" })
@@ -654,7 +641,7 @@ function AutoShoot.Init(UI, Core, notify)
             notify("AutoShoot", "Shoot Key: " .. GetKeyName(key), true)
             UpdateModeText()
         end,
-        ManualMode = ManualMode
+        ManualMode = ManualMode  -- как в MovementEnhancements
     })
 
     autoShootSection:Divider()
