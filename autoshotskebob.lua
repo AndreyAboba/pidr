@@ -66,7 +66,7 @@ function AutoShoot.Init(UI, Core, notify)
     local CanShoot = true
     local LastShoot = 0
 
-    -- === DRAWING TEXT (восстановлено) ===
+    -- === DRAWING TEXT ===
     local DebugText = Drawing.new("Text")
     DebugText.Size = 16
     DebugText.Font = 2
@@ -74,6 +74,15 @@ function AutoShoot.Init(UI, Core, notify)
     DebugText.Outline = true
     DebugText.Center = true
     DebugText.Visible = false
+
+    -- === CONNECTIONS ===
+    local connections = {}
+    local function disconnectAll()
+        for _, conn in ipairs(connections) do
+            if conn.Connected then conn:Disconnect() end
+        end
+        table.clear(connections)
+    end
 
     local function GetKeyName(key)
         if key == Enum.KeyCode.Unknown then return "None" end
@@ -146,6 +155,8 @@ function AutoShoot.Init(UI, Core, notify)
             for _, line in ipairs(cube) do if line then line.Visible = false end end
         end
     end
+
+    -- [GetMyTeam, UpdateGoal, GetEnemyGoalie, CalculateTrajectoryHeight, GetTarget, CalculateTarget — без изменений]
 
     local function GetMyTeam()
         local stats = Workspace:FindFirstChild("PlayerStats")
@@ -316,49 +327,7 @@ function AutoShoot.Init(UI, Core, notify)
             end
         end
 
-        if #candidates == 0 then
-            local x = targetSide * halfWidth * 0.9
-            local power = math.clamp(State.AutoShoot.MinPower.Value + dist * State.AutoShoot.PowerPerStud.Value, State.AutoShoot.MinPower.Value, State.AutoShoot.MaxPower.Value)
-            local height, timeToTarget, gravityFall, baseHeight = CalculateTrajectoryHeight(dist, power, "FALLBACK", isLowShot)
-            local spin = dist >= 110 and (targetSide > 0 and "Right" or "Left") or "None"
-            local zOffset = playerLocalX < 0 and 2.0 or 0
-            local derivation = 0
-            if dist >= 110 then
-                derivation = (spin == "Left" and 1 or -1) * (dist / 100)^1.5 * 1.3 * power
-                if dist < 80 then derivation = derivation * (dist / 80) end
-            elseif dist < 80 then
-                derivation = math.random(-0.5, 0.5)
-            end
-            local targets = ricochetPoints
-            for _, target in ipairs(targets) do
-                local x = target.x; local y = target.y; local targetType = target.type; local ricochetNormal = target.normal
-                local randX = math.random(-0.15, 0.15) * halfWidth
-                local randY = math.random(-0.15, 0.15) * halfHeight
-                local noSpinPos = GoalCFrame * Vector3.new(math.clamp(x + randX, -halfWidth+0.5, halfWidth-0.5), height + randY, 0)
-                local worldPos = GoalCFrame * Vector3.new(x + derivation + randX, height + randY, zOffset)
-                local shootDir = (worldPos - startPos).Unit
-                local goalNormal = GoalCFrame.LookVector
-                local angleScore = math.abs(shootDir:Dot(goalNormal))
-                local postPenalty = math.abs(playerLocalX - (x + derivation + randX)) < halfWidth * 0.5 and 5 or 0
-                local goaliePenalty = math.abs(goalieX - (x + derivation + randX)) * 3
-                local goalieYDist = math.abs(goalieY - (height + randY))
-                local distToTarget = goaliePos and (worldPos - goaliePos).Magnitude or 999
-                local goalieBlockPenalty = distToTarget < 5 and 10 or 0
-                if goaliePos then
-                    local goalieDir = (goaliePos - startPos).Unit
-                    if shootDir:Dot(goalieDir) > 0.9 then goalieBlockPenalty = goalieBlockPenalty + 15 end
-                end
-                local ricochetScore = 0
-                if ricochetNormal then
-                    local reflectDir = shootDir - 2 * shootDir:Dot(ricochetNormal) * ricochetNormal
-                    local reflectAwayFromGoalie = goalieX > 0 and reflectDir.X < 0 or goalieX < 0 and reflectDir.X > 0
-                    ricochetScore = reflectAwayFromGoalie and 5 or 0
-                end
-                local score = goaliePenalty - angleScore * 2 - goalieYDist * 0.5 + math.random() - postPenalty - goalieBlockPenalty + ricochetScore
-                if isClose then score = score + 3 end
-                table.insert(candidates, { pos=worldPos, noSpinPos=noSpinPos, spin=spin, power=power, name="FALLBACK", score=score, angleScore=angleScore, derivation=derivation, baseHeight=baseHeight, timeToTarget=timeToTarget, gravityFall=gravityFall, targetType=targetType })
-            end
-        end
+        if #candidates == 0 then return nil, "None", "None", 0 end
 
         table.sort(candidates, function(a, b) return a.score > b.score end)
         local selected = candidates[1]
@@ -366,6 +335,7 @@ function AutoShoot.Init(UI, Core, notify)
     end
 
     local function CalculateTarget()
+        if not State.AutoShoot.Enabled.Value then return end
         local width = UpdateGoal()
         if not GoalCFrame or not width then TargetPoint = nil; NoSpinPoint = nil; return end
 
@@ -409,76 +379,88 @@ function AutoShoot.Init(UI, Core, notify)
             Shooter:FireServer(ShootDir, BallAttachment.CFrame, CurrentPower, ShootVel, false, false, CurrentSpin, nil, false)
         end)
         if success then
-            -- УБРАН notify при выстреле
             LastShoot = tick()
             CanShoot = false
             task.delay(0.3, function() CanShoot = true end)
         end
     end
 
-    UserInputService.InputBegan:Connect(function(inp, gp)
-        if gp or not State.AutoShoot.Enabled.Value or not State.AutoShoot.ManualShot.Value then return end
-        if inp.KeyCode == State.AutoShoot.ShootKey.Value and CanShoot then
+    -- === INPUT & LOOPS (только если Enabled) ===
+    local function setupLoops()
+        disconnectAll()
+
+        if not State.AutoShoot.Enabled.Value then return end
+
+        -- Input
+        table.insert(connections, UserInputService.InputBegan:Connect(function(inp, gp)
+            if gp or not State.AutoShoot.Enabled.Value or not State.AutoShoot.ManualShot.Value then return end
+            if inp.KeyCode == State.AutoShoot.ShootKey.Value and CanShoot then
+                pcall(CalculateTarget)
+                TryShoot()
+            end
+        end))
+
+        -- AutoShoot
+        table.insert(connections, RunService.Heartbeat:Connect(function()
+            if State.AutoShoot.ManualShot.Value or not State.AutoShoot.Enabled.Value then return end
+            if tick() - LastShoot < 0.3 then return end
             pcall(CalculateTarget)
             TryShoot()
-        end
-    end)
+        end))
 
-    local function AutoShootLoop()
-        if State.AutoShoot.ManualShot.Value or not State.AutoShoot.Enabled.Value then return end
-        if tick() - LastShoot < 0.3 then return end
-        pcall(CalculateTarget)
-        TryShoot()
-    end
+        -- AutoPickup
+        table.insert(connections, RunService.Heartbeat:Connect(function()
+            if not State.AutoShoot.Enabled.Value or not State.AutoShoot.AutoPickup.Value then return end
+            local ball = Workspace:FindFirstChild("ball")
+            if not ball or ball:FindFirstChild("playerWeld") or (HumanoidRootPart.Position - ball.Position).Magnitude > State.AutoShoot.PickupDist.Value then return end
+            if PickupRemote then pcall(function() PickupRemote:FireServer(State.AutoShoot.SpoofValue.Value) end) end
+        end))
 
-    RunService.Heartbeat:Connect(function()
-        if not State.AutoShoot.AutoPickup.Value then return end
-        local ball = Workspace:FindFirstChild("ball")
-        if not ball or ball:FindFirstChild("playerWeld") or (HumanoidRootPart.Position - ball.Position).Magnitude > State.AutoShoot.PickupDist.Value then return end
-        if PickupRemote then pcall(function() PickupRemote:FireServer(State.AutoShoot.SpoofValue.Value) end) end
-    end)
+        -- Render
+        table.insert(connections, RunService.RenderStepped:Connect(function()
+            if not State.AutoShoot.Enabled.Value then
+                for _, l in ipairs(GoalCube) do if l then l.Visible = false end end
+                for _, l in ipairs(TargetCube) do if l then l.Visible = false end end
+                for _, l in ipairs(NoSpinCube) do if l then l.Visible = false end end
+                DebugText.Visible = false
+                return
+            end
 
-    RunService.RenderStepped:Connect(function()
-        local width = UpdateGoal()
-        if GoalCFrame and width then DrawOrientedCube(GoalCube, GoalCFrame, Vector3.new(width, GoalHeight, 2)) else for _, l in ipairs(GoalCube) do if l then l.Visible = false end end end
+            local width = UpdateGoal()
+            if GoalCFrame and width then DrawOrientedCube(GoalCube, GoalCFrame, Vector3.new(width, GoalHeight, 2)) else for _, l in ipairs(GoalCube) do if l then l.Visible = false end end end
 
-        if TargetPoint then
-            local targetCFrame = CFrame.new(TargetPoint)
-            local cubeSize = Vector3.new(4, 4, 4)
-            local distToCamera = (Camera.CFrame.Position - TargetPoint).Magnitude
-            if distToCamera < 500 then DrawOrientedCube(TargetCube, targetCFrame, cubeSize) else for _, l in ipairs(TargetCube) do if l then l.Visible = false end end end
-        else
-            for _, l in ipairs(TargetCube) do if l then l.Visible = false end end
-        end
+            if TargetPoint then
+                local targetCFrame = CFrame.new(TargetPoint)
+                local cubeSize = Vector3.new(4, 4, 4)
+                local distToCamera = (Camera.CFrame.Position - TargetPoint).Magnitude
+                if distToCamera < 500 then DrawOrientedCube(TargetCube, targetCFrame, cubeSize) else for _, l in ipairs(TargetCube) do if l then l.Visible = false end end end
+            else
+                for _, l in ipairs(TargetCube) do if l then l.Visible = false end end
+            end
 
-        if NoSpinPoint then
-            local noSpinCFrame = CFrame.new(NoSpinPoint)
-            local cubeSize = Vector3.new(3, 3, 3)
-            local distToCamera = (Camera.CFrame.Position - NoSpinPoint).Magnitude
-            if distToCamera < 500 then DrawOrientedCube(NoSpinCube, noSpinCFrame, cubeSize) else for _, l in ipairs(NoSpinCube) do if l then l.Visible = false end end end
-        else
-            for _, l in ipairs(NoSpinCube) do if l then l.Visible = false end end
-        end
+            if NoSpinPoint then
+                local noSpinCFrame = CFrame.new(NoSpinPoint)
+                local cubeSize = Vector3.new(3, 3, 3)
+                local distToCamera = (Camera.CFrame.Position - NoSpinPoint).Magnitude
+                if distToCamera < 500 then DrawOrientedCube(NoSpinCube, noSpinCFrame, cubeSize) else for _, l in ipairs(NoSpinCube) do if l then l.Visible = false end end end
+            else
+                for _, l in ipairs(NoSpinCube) do if l then l.Visible = false end end
+            end
 
-        -- === DRAWING TEXT UPDATE ===
-        if TargetPoint and CurrentType then
-            local screenPos, onScreen = Camera:WorldToViewportPoint(TargetPoint + Vector3.new(0, 6, 0))
-            if onScreen and screenPos.Z > 0 then
-                DebugText.Text = string.format("%s\nPower: %.1f | Spin: %s", CurrentType, CurrentPower, CurrentSpin)
-                DebugText.Position = Vector2.new(screenPos.X, screenPos.Y)
-                DebugText.Visible = true
+            if TargetPoint and CurrentType then
+                local screenPos, onScreen = Camera:WorldToViewportPoint(TargetPoint + Vector3.new(0, 6, 0))
+                if onScreen and screenPos.Z > 0 then
+                    DebugText.Text = string.format("%s\nPower: %.1f | Spin: %s", CurrentType, CurrentPower, CurrentSpin)
+                    DebugText.Position = Vector2.new(screenPos.X, screenPos.Y)
+                    DebugText.Visible = true
+                else
+                    DebugText.Visible = false
+                end
             else
                 DebugText.Visible = false
             end
-        else
-            DebugText.Visible = false
-        end
-    end)
-
-    RunService.Heartbeat:Connect(function()
-        pcall(CalculateTarget)
-        AutoShootLoop()
-    end)
+        end))
+    end
 
     local function connectCharacter(character)
         localCharacter = character
@@ -494,11 +476,12 @@ function AutoShoot.Init(UI, Core, notify)
         IsAnimating = false
         CanShoot = true
         InitializeCubes()
+        setupLoops()
     end
     LocalPlayer.CharacterAdded:Connect(connectCharacter)
     if LocalPlayer.Character then connectCharacter(LocalPlayer.Character) end
 
-    -- === UI (MacLib: English, как в TargetESP) ===
+    -- === UI ===
     local autoShootSection
     if UI.Sections.AutoShoot then
         autoShootSection = UI.Sections.AutoShoot
@@ -521,6 +504,7 @@ function AutoShoot.Init(UI, Core, notify)
         Callback = function(value)
             State.AutoShoot.Enabled.Value = value
             notify("AutoShoot", value and "Enabled" or "Disabled", true)
+            setupLoops()
         end
     })
 
@@ -538,10 +522,10 @@ function AutoShoot.Init(UI, Core, notify)
         Default = State.AutoShoot.ShootKey.Default,
         Callback = function(key)
             State.AutoShoot.ShootKey.Value = key
-            notify("AutoShoot", "Shoot Key: " .. GetKeyName(key), true)
+            notify("AutoShoot", "Key: " .. GetKeyName(key), true)
         end,
         Fallback = function()
-            if State.AutoShoot.ManualShot.Value and CanShoot then
+            if State.AutoShoot.Enabled.Value and State.AutoShoot.ManualShot.Value and CanShoot then
                 pcall(CalculateTarget)
                 TryShoot()
             end
@@ -615,19 +599,120 @@ function AutoShoot.Init(UI, Core, notify)
     })
 
     autoShootSection:Divider()
-    autoShootSection:SubLabel({ Text = "Attacks" })
+    autoShootSection:SubLabel({ Text = "Attack Settings" })
 
     for attackName, cfg in pairs(State.AutoShoot.Attacks) do
-        uiElements[attackName] = autoShootSection:Toggle({
-            Name = attackName,
+        local attackSection = autoShootSection:Section({ Name = attackName, Side = "Right" })
+
+        uiElements[attackName .. "_Enabled"] = attackSection:Toggle({
+            Name = "Enabled",
             Default = cfg.Enabled.Default,
             Callback = function(value)
                 cfg.Enabled.Value = value
             end
         })
+
+        uiElements[attackName .. "_MinDist"] = attackSection:Slider({
+            Name = "Min Distance",
+            Minimum = 0,
+            Maximum = 300,
+            Default = cfg.MinDist,
+            Precision = 0,
+            Callback = function(value)
+                cfg.MinDist = value
+            end
+        })
+
+        uiElements[attackName .. "_MaxDist"] = attackSection:Slider({
+            Name = "Max Distance",
+            Minimum = 0,
+            Maximum = 300,
+            Default = cfg.MaxDist,
+            Precision = 0,
+            Callback = function(value)
+                cfg.MaxDist = value
+            end
+        })
+
+        if cfg.Power then
+            uiElements[attackName .. "_Power"] = attackSection:Slider({
+                Name = "Power",
+                Minimum = 0.1,
+                Maximum = 100,
+                Default = cfg.Power,
+                Precision = 1,
+                Callback = function(value)
+                    cfg.Power = value
+                end
+            })
+        elseif cfg.PowerAdd then
+            uiElements[attackName .. "_PowerAdd"] = attackSection:Slider({
+                Name = "Power Add",
+                Minimum = -10,
+                Maximum = 10,
+                Default = cfg.PowerAdd,
+                Precision = 1,
+                Callback = function(value)
+                    cfg.PowerAdd = value
+                end
+            })
+        end
+
+        if cfg.XMult then
+            uiElements[attackName .. "_XMult"] = attackSection:Slider({
+                Name = "X Multiplier",
+                Minimum = 0.1,
+                Maximum = 3,
+                Default = cfg.XMult,
+                Precision = 2,
+                Callback = function(value)
+                    cfg.XMult = value
+                end
+            })
+        end
+
+        if cfg.ZOffset then
+            uiElements[attackName .. "_ZOffset"] = attackSection:Slider({
+                Name = "Z Offset",
+                Minimum = -20,
+                Maximum = 20,
+                Default = cfg.ZOffset,
+                Precision = 1,
+                Callback = function(value)
+                    cfg.ZOffset = value
+                end
+            })
+        end
+
+        if cfg.HeightMult then
+            uiElements[attackName .. "_HeightMult"] = attackSection:Slider({
+                Name = "Height Mult",
+                Minimum = 0.1,
+                Maximum = 3,
+                Default = cfg.HeightMult,
+                Precision = 2,
+                Callback = function(value)
+                    cfg.HeightMult = value
+                end
+            })
+        end
+
+        if cfg.DerivationMult then
+            uiElements[attackName .. "_DerivationMult"] = attackSection:Slider({
+                Name = "Derivation Mult",
+                Minimum = 0,
+                Maximum = 10,
+                Default = cfg.DerivationMult,
+                Precision = 2,
+                Callback = function(value)
+                    cfg.DerivationMult = value
+                end
+            })
+        end
     end
 
     function AutoShoot:Destroy()
+        disconnectAll()
         for i = 1, 12 do
             if TargetCube[i] then TargetCube[i]:Remove() end
             if GoalCube[i] then GoalCube[i]:Remove() end
@@ -635,6 +720,8 @@ function AutoShoot.Init(UI, Core, notify)
         end
         if DebugText then DebugText:Remove() end
     end
+
+    setupLoops()
 
     return AutoShoot
 end
