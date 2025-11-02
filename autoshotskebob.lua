@@ -1,3 +1,4 @@
+print('2')
 local AutoShoot = {}
 
 function AutoShoot.Init(UI, Core, notify)
@@ -423,7 +424,7 @@ function AutoShoot.Init(UI, Core, notify)
         Gui.Spin.Text = string.format("Spin: %s", spin)
     end
 
-    -- === ManualMode (точно как в MovementEnhancements) ===
+    -- === ManualMode (вызывается ТОЛЬКО при нажатии) ===
     local ManualMode = {}
     function ManualMode.start()
         if not IsEnabled() or not State.AutoShoot.ManualShot.Value or not CanShoot then return end
@@ -455,7 +456,7 @@ function AutoShoot.Init(UI, Core, notify)
             notify("AutoShoot", Gui.Status.Text, true)
         end
     end
-    function ManualMode.stop() end  -- обязателен, но пустой
+    function ManualMode.stop() end
 
     -- === Auto Shoot Loop ===
     local function AutoShootLoop()
@@ -520,7 +521,7 @@ function AutoShoot.Init(UI, Core, notify)
         end
     end)
 
-    -- === Heartbeat: Status + AutoShoot ===
+    -- === Heartbeat ===
     RunService.Heartbeat:Connect(function()
         if not IsEnabled() then
             Gui.Status.Text = "Disabled"
@@ -601,7 +602,7 @@ function AutoShoot.Init(UI, Core, notify)
     LocalPlayer.CharacterAdded:Connect(connectCharacter)
     if LocalPlayer.Character then connectCharacter(LocalPlayer.Character) end
 
-    -- === AutoShoot UI Section ===
+    -- === UI Section ===
     local autoShootSection = UI.Sections.AutoShoot or (UI.Tabs.Main and UI.Tabs.Main:Section({ Name = "AutoShoot", Side = "Left" })) or error("No Main tab")
     UI.Sections.AutoShoot = autoShootSection
 
@@ -633,15 +634,17 @@ function AutoShoot.Init(UI, Core, notify)
         end
     })
 
+    -- === КЛЮЧЕВОЕ: Keybind.Callback — ТОЛЬКО ПРИ СМЕНЕ КЛАВИШИ ===
     uiElements.ShootKey = autoShootSection:Keybind({
         Name = "Shoot Key",
         Default = State.AutoShoot.ShootKey.Default,
         Callback = function(key)
+            if not State.AutoShoot.ManualShot.Value then return end  -- НЕ уведомляем, если Manual выключен
             State.AutoShoot.ShootKey.Value = key
             notify("AutoShoot", "Shoot Key: " .. GetKeyName(key), true)
             UpdateModeText()
         end,
-        ManualMode = ManualMode  -- как в MovementEnhancements
+        ManualMode = ManualMode
     })
 
     autoShootSection:Divider()
