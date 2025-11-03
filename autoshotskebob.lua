@@ -1,4 +1,4 @@
--- [v35.43] AUTO SHOOT + LEGIT ANIMATION + UI INTEGRATION
+-- [v35.43] AUTO SHOOT + LEGIT ANIMATION + UI INTEGRATION (исправлено)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -20,7 +20,7 @@ for _, r in ReplicatedStorage.Remotes:GetChildren() do
     end
 end
 
--- === АНИМАЦИЯ RShoot (ДЛИТЕЛЬНАЯ) ===
+-- === АНИМАЦИЯ RShoot ===
 local Animations = ReplicatedStorage:WaitForChild("Animations")
 local RShootAnim = Humanoid:LoadAnimation(Animations:WaitForChild("RShoot"))
 RShootAnim.Priority = Enum.AnimationPriority.Action4
@@ -75,18 +75,6 @@ local LastShoot = 0
 local CanShoot = true
 
 -- === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
-local function getCharacterData()
-    local character = LocalPlayer.Character
-    if not character then return nil, nil end
-    local humanoid = character:FindFirstChild("Humanoid")
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    return humanoid, rootPart
-end
-
-local function isCharacterValid(humanoid, rootPart)
-    return humanoid and rootPart and humanoid.Health > 0
-end
-
 local function GetKeyName(key)
     if key == Enum.KeyCode.Unknown then return "None" end
     local name = tostring(key):match("KeyCode%.(.+)") or tostring(key)
@@ -316,10 +304,7 @@ AutoShoot.Start = function()
         local dist = GoalCFrame and (HumanoidRootPart.Position - GoalCFrame.Position).Magnitude or 999
 
         if hasBall and TargetPoint and dist <= AutoShootConfig.MaxDistance then
-            if AutoShootStatus.ManualShot then
-                -- Ручной режим: только по клавише (обработка в InputBegan)
-            else
-                -- Авто-режим
+            if not AutoShootStatus.ManualShot then
                 if tick() - LastShoot < 0.3 then return end
                 if AutoShootConfig.Legit and not IsAnimating then
                     IsAnimating = true
@@ -337,7 +322,7 @@ AutoShoot.Start = function()
         end
     end)
 
-    -- Обработка ручного выстрела
+    -- Ручной выстрел
     UserInputService.InputBegan:Connect(function(inp, gp)
         if gp or not AutoShootConfig.Enabled or not AutoShootStatus.ManualShot or not CanShoot then return end
         if inp.KeyCode == AutoShootStatus.Key then
@@ -380,10 +365,7 @@ end
 AutoShoot.SetManualShot = function(value)
     AutoShootStatus.ManualShot = value
     AutoShootConfig.ManualShot = value
-    if AutoShootStatus.Running then
-        AutoShoot.Stop()
-        AutoShoot.Start()
-    end
+    if AutoShootStatus.Running then AutoShoot.Stop(); AutoShoot.Start() end
     notify("AutoShoot", "ManualShot: " .. (value and "Enabled" or "Disabled"), false)
 end
 
@@ -420,49 +402,31 @@ local function SetupUI(UI)
         uiElements.AutoShootEnabled = UI.Sections.AutoShoot:Toggle({
             Name = "Enabled",
             Default = AutoShootConfig.Enabled,
-            Callback = function(value)
-                AutoShootConfig.Enabled = value
-                if value then AutoShoot.Start() else AutoShoot.Stop() end
-            end
+            Callback = function(v) AutoShootConfig.Enabled = v; if v then AutoShoot.Start() else AutoShoot.Stop() end end
         }, "AutoShootEnabled")
 
         uiElements.AutoShootLegit = UI.Sections.AutoShoot:Toggle({
             Name = "Legit Animation",
             Default = AutoShootConfig.Legit,
-            Callback = function(value)
-                AutoShootConfig.Legit = value
-                notify("AutoShoot", "Legit Animation " .. (value and "Enabled" or "Disabled"), true)
-            end
+            Callback = function(v) AutoShootConfig.Legit = v; notify("AutoShoot", "Legit Animation " .. (v and "Enabled" or "Disabled"), true) end
         }, "AutoShootLegit")
 
         uiElements.AutoShootManual = UI.Sections.AutoShoot:Toggle({
             Name = "Manual Shot",
             Default = AutoShootConfig.ManualShot,
-            Callback = function(value)
-                AutoShoot.SetManualShot(value)
-            end
+            Callback = AutoShoot.SetManualShot
         }, "AutoShootManual")
 
         uiElements.AutoShootKey = UI.Sections.AutoShoot:Keybind({
             Name = "Shoot Key",
             Default = AutoShootConfig.ShootKey,
-            Callback = function(value)
-                AutoShootStatus.Key = value
-                AutoShootConfig.ShootKey = value
-                notify("AutoShoot", "Shoot Key: " .. GetKeyName(value), false)
-            end
+            Callback = function(v) AutoShootStatus.Key = v; AutoShootConfig.ShootKey = v; notify("AutoShoot", "Shoot Key: " .. GetKeyName(v), false) end
         }, "AutoShootKey")
 
         uiElements.AutoShootMaxDist = UI.Sections.AutoShoot:Slider({
             Name = "Max Distance",
-            Minimum = 50,
-            Maximum = 300,
-            Default = AutoShootConfig.MaxDistance,
-            Precision = 1,
-            Callback = function(value)
-                AutoShootConfig.MaxDistance = value
-                notify("AutoShoot", "Max Distance: " .. value, false)
-            end
+            Minimum = 50, Maximum = 300, Default = AutoShootConfig.MaxDistance, Precision = 1,
+            Callback = function(v) AutoShootConfig.MaxDistance = v; notify("AutoShoot", "Max Distance: " .. v, false) end
         }, "AutoShootMaxDist")
     end
 
@@ -471,38 +435,23 @@ local function SetupUI(UI)
         uiElements.AutoPickupEnabled = UI.Sections.AutoPickup:Toggle({
             Name = "Enabled",
             Default = AutoPickupConfig.Enabled,
-            Callback = function(value)
-                AutoPickupConfig.Enabled = value
-                if value then AutoPickup.Start() else AutoPickup.Stop() end
-            end
+            Callback = function(v) AutoPickupConfig.Enabled = v; if v then AutoPickup.Start() else AutoPickup.Stop() end end
         }, "AutoPickupEnabled")
 
         uiElements.AutoPickupDist = UI.Sections.AutoPickup:Slider({
             Name = "Pickup Distance",
-            Minimum = 50,
-            Maximum = 300,
-            Default = AutoPickupConfig.PickupDist,
-            Precision = 1,
-            Callback = function(value)
-                AutoPickupConfig.PickupDist = value
-                notify("AutoPickup", "Distance: " .. value, false)
-            end
+            Minimum = 50, Maximum = 300, Default = AutoPickupConfig.PickupDist, Precision = 1,
+            Callback = function(v) AutoPickupConfig.PickupDist = v; notify("AutoPickup", "Distance: " .. v, false) end
         }, "AutoPickupDist")
 
         uiElements.AutoPickupSpoof = UI.Sections.AutoPickup:Slider({
             Name = "Spoof Value",
-            Minimum = 0.1,
-            Maximum = 5.0,
-            Default = AutoPickupConfig.SpoofValue,
-            Precision = 2,
-            Callback = function(value)
-                AutoPickupConfig.SpoofValue = value
-                notify("AutoPickup", "Spoof Value: " .. value, false)
-            end
+            Minimum = 0.1, Maximum = 5.0, Default = AutoPickupConfig.SpoofValue, Precision = 2,
+            Callback = function(v) AutoPickupConfig.SpoofValue = v; notify("AutoPickup", "Spoof Value: " .. v, false) end
         }, "AutoPickupSpoof")
     end
 
-    -- Синхронизация конфига
+    -- Синхронизация
     local syncSection = UI.Tabs.Config:Section({ Name = "AutoShoot & AutoPickup Sync", Side = "Right" })
     syncSection:Header({ Name = "Sync Settings" })
     syncSection:Button({
@@ -521,27 +470,25 @@ local function SetupUI(UI)
             AutoShootStatus.Key = AutoShootConfig.ShootKey
             AutoShootStatus.ManualShot = AutoShootConfig.ManualShot
 
-            if AutoShootConfig.Enabled then
-                if not AutoShootStatus.Running then AutoShoot.Start() end
-            else
-                if AutoShootStatus.Running then AutoShoot.Stop() end
-            end
+            if AutoShootConfig.Enabled then if not AutoShootStatus.Running then AutoShoot.Start() end
+            else if AutoShootStatus.Running then AutoShoot.Stop() end end
 
-            if AutoPickupConfig.Enabled then
-                if not AutoPickupStatus.Running then AutoPickup.Start() end
-            else
-                if AutoPickupStatus.Running then AutoPickup.Stop() end
-            end
+            if AutoPickupConfig.Enabled then if not AutoPickupStatus.Running then AutoPickup.Start() end
+            else if AutoPickupStatus.Running then AutoPickup.Stop() end end
 
             notify("Syllinse", "AutoShoot & AutoPickup config synchronized!", true)
         end
     })
 end
 
--- === INIT & DESTROY ===
-function AutoShootModule.Init(UI, Core, notify)
-    Services = Core.Services
-    PlayerData = Core.PlayerData
+-- === ТАБЛИЦА МОДУЛЯ ===
+local AutoShootModule = {}
+
+function AutoShootModule.Init(UI, coreParam, notifyFunc)
+    core = coreParam
+    Services = core.Services
+    PlayerData = core.PlayerData
+    notify = notifyFunc
     LocalPlayerObj = PlayerData.LocalPlayer
 
     SetupUI(UI)
@@ -569,4 +516,3 @@ function AutoShootModule:Destroy()
 end
 
 return AutoShootModule
-
