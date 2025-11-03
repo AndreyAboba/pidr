@@ -1,4 +1,5 @@
 -- [v35.43] AUTO SHOOT + LEGIT ANIMATION + UI INTEGRATION (исправлено)
+print('2')
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -516,3 +517,4 @@ function AutoShootModule:Destroy()
 end
 
 return AutoShootModule
+
