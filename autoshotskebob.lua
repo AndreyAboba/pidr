@@ -1,4 +1,5 @@
--- [v35.43] AUTO SHOOT + AUTO PICKUP + FIXED DRAWING + DEBUG TEXT
+-- [v35.43] AUTO SHOOT + AUTO PICKUP + FULL GUI + UI INTEGRATION (РАБОЧАЯ ВЕРСИЯ С ИСПРАВЛЕНИЯМИ)
+print('1')
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -20,7 +21,7 @@ for _, r in ReplicatedStorage.Remotes:GetChildren() do
     end
 end
 
--- === АНИМАЦИЯ ===
+-- === АНИМАЦИЯ RShoot ===
 local Animations = ReplicatedStorage:WaitForChild("Animations")
 local RShootAnim = Humanoid:LoadAnimation(Animations:WaitForChild("RShoot"))
 RShootAnim.Priority = Enum.AnimationPriority.Action4
@@ -40,7 +41,7 @@ local AutoShootConfig = {
     MaxPower = 7.0,
     PowerPerStud = 0.025,
     MaxHeight = 100.0,
-    DebugText = true  -- Новая настройка
+    DebugText = true  -- Новая настройка для включения/выключения drawing текста
 }
 
 local AutoPickupConfig = {
@@ -53,8 +54,10 @@ local AutoPickupConfig = {
 local AutoShootStatus = {
     Running = false,
     Connection = nil,
+    RenderConnection = nil,
     Key = AutoShootConfig.ShootKey,
-    ManualShot = AutoShootConfig.ManualShot
+    ManualShot = AutoShootConfig.ManualShot,
+    DebugText = AutoShootConfig.DebugText
 }
 
 local AutoPickupStatus = {
@@ -62,159 +65,96 @@ local AutoPickupStatus = {
     Connection = nil
 }
 
--- === ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ДЛЯ DRAWING ===
-local Gui = {}
-local TargetCube, GoalCube, NoSpinCube = {}, {}, {}
-local RenderConnection = nil
-local HeartbeatConnection = nil
+-- === GUI (Drawing) ===
+local Gui = {
+    Status = Drawing.new("Text"), Dist = Drawing.new("Text"), Target = Drawing.new("Text"),
+    Power = Drawing.new("Text"), Spin = Drawing.new("Text"), GK = Drawing.new("Text"),
+    Debug = Drawing.new("Text"), Mode = Drawing.new("Text")
+}
 
--- === ИНИЦИАЛИЗАЦИЯ GUI ===
 local function SetupGUI()
-    -- Очистка старого GUI
-    for _, obj in pairs(Gui) do
-        if obj and obj.Remove then
-            pcall(function() obj:Remove() end)
-        end
-    end
-    
     local s = Camera.ViewportSize
     local cx, y = s.X / 2, s.Y * 0.48
-    Gui = {
-        Status = Drawing.new("Text"), Dist = Drawing.new("Text"), Target = Drawing.new("Text"),
-        Power = Drawing.new("Text"), Spin = Drawing.new("Text"), GK = Drawing.new("Text"),
-        Debug = Drawing.new("Text"), Mode = Drawing.new("Text")
-    }
-    
     for i, v in ipairs({Gui.Status, Gui.Dist, Gui.Target, Gui.Power, Gui.Spin, Gui.GK, Gui.Debug, Gui.Mode}) do
-        v.Size = 18
-        v.Color = Color3.fromRGB(255, 255, 255)
-        v.Outline = true
-        v.Center = true
-        v.Position = Vector2.new(cx, y + (i-1)*20)
-        v.Visible = AutoShootConfig.DebugText
+        v.Size = 18; v.Color = Color3.fromRGB(255, 255, 255); v.Outline = true; v.Center = true
+        v.Position = Vector2.new(cx, y + (i-1)*20); v.Visible = AutoShootStatus.DebugText
     end
-    
     Gui.Status.Text = "v35.43: Ready"
-    Gui.Dist.Text = "Dist: --"
-    Gui.Target.Text = "Target: --"
-    Gui.Power.Text = "Power: --"
-    Gui.Spin.Text = "Spin: --"
-    Gui.GK.Text = "GK: --"
-    Gui.Debug.Text = "Debug: Active"
-    UpdateModeText()
+    Gui.Dist.Text = "Dist: --"; Gui.Target.Text = "Target: --"
+    Gui.Power.Text = "Power: --"; Gui.Spin.Text = "Spin: --"; Gui.GK.Text = "GK: --"
+    Gui.Debug.Text = "Debug: Initializing"
+    Gui.Mode.Text = "Mode: Manual (E)"
 end
 
--- === ОЧИСТКА КУБОВ ===
-local function ClearCubes()
-    for i = 1, 12 do
-        if TargetCube[i] then
-            pcall(function() TargetCube[i]:Remove() end)
-            TargetCube[i] = nil
-        end
-        if GoalCube[i] then
-            pcall(function() GoalCube[i]:Remove() end)
-            GoalCube[i] = nil
-        end
-        if NoSpinCube[i] then
-            pcall(function() NoSpinCube[i]:Remove() end)
-            NoSpinCube[i] = nil
-        end
+local function ToggleDebugText(value)
+    for _, v in pairs(Gui) do
+        v.Visible = value
     end
 end
 
--- === ИНИЦИАЛИЗАЦИЯ КУБОВ ===
+-- === 3D CUBES ===
+local TargetCube, GoalCube, NoSpinCube = {}, {}, {}
 local function InitializeCubes()
-    ClearCubes()
-    TargetCube = {}
-    GoalCube = {}
-    NoSpinCube = {}
-    
     for i = 1, 12 do
+        if TargetCube[i] and TargetCube[i].Remove then TargetCube[i]:Remove() end
+        if GoalCube[i] and GoalCube[i].Remove then GoalCube[i]:Remove() end
+        if NoSpinCube[i] and NoSpinCube[i].Remove then NoSpinCube[i]:Remove() end
         TargetCube[i] = Drawing.new("Line")
         GoalCube[i] = Drawing.new("Line")
         NoSpinCube[i] = Drawing.new("Line")
     end
-    
     local function SetupCube(cube, color, thickness)
         for _, line in ipairs(cube) do
-            if line then
-                line.Color = color
-                line.Thickness = thickness or 2
-                line.Transparency = 0.7
-                line.ZIndex = 1000
-                line.Visible = false
-            end
+            line.Color = color; line.Thickness = thickness or 2; line.Transparency = 0.7
+            line.ZIndex = 1000; line.Visible = false
         end
     end
-    
     SetupCube(TargetCube, Color3.fromRGB(0, 255, 0), 6)
     SetupCube(GoalCube, Color3.fromRGB(255, 0, 0), 4)
     SetupCube(NoSpinCube, Color3.fromRGB(0, 255, 255), 5)
 end
 
--- === DrawOrientedCube ===
 local function DrawOrientedCube(cube, cframe, size)
     if not cframe or not size then
-        for _, line in ipairs(cube) do 
-            if line then line.Visible = false end 
-        end
+        for _, line in ipairs(cube) do line.Visible = false end
         return
     end
-    
     pcall(function()
         local half = size / 2
         local corners = {
-            cframe * Vector3.new(-half.X, -half.Y, -half.Z),
-            cframe * Vector3.new(half.X, -half.Y, -half.Z),
-            cframe * Vector3.new(half.X, half.Y, -half.Z),
-            cframe * Vector3.new(-half.X, half.Y, -half.Z),
-            cframe * Vector3.new(-half.X, -half.Y, half.Z),
-            cframe * Vector3.new(half.X, -half.Y, half.Z),
-            cframe * Vector3.new(half.X, half.Y, half.Z),
-            cframe * Vector3.new(-half.X, half.Y, half.Z)
+            cframe * Vector3.new(-half.X, -half.Y, -half.Z), cframe * Vector3.new(half.X, -half.Y, -half.Z),
+            cframe * Vector3.new(half.X, half.Y, -half.Z), cframe * Vector3.new(-half.X, half.Y, -half.Z),
+            cframe * Vector3.new(-half.X, -half.Y, half.Z), cframe * Vector3.new(half.X, -half.Y, half.Z),
+            cframe * Vector3.new(half.X, half.Y, half.Z), cframe * Vector3.new(-half.X, half.Y, half.Z)
         }
         local edges = {{1,2},{2,3},{3,4},{4,1},{5,6},{6,7},{7,8},{8,5},{1,5},{2,6},{3,7},{4,8}}
-        
         for i, edge in ipairs(edges) do
             local a, b = corners[edge[1]], corners[edge[2]]
             local aScreen, aVis = Camera:WorldToViewportPoint(a)
             local bScreen, bVis = Camera:WorldToViewportPoint(b)
             local line = cube[i]
-            if line and aVis and bVis and aScreen.Z > 0 and bScreen.Z > 0 then
+            if aVis and bVis and aScreen.Z > 0 and bScreen.Z > 0 then
                 line.From = Vector2.new(aScreen.X, aScreen.Y)
                 line.To = Vector2.new(bScreen.X, bScreen.Y)
                 line.Visible = true
             else
-                if line then line.Visible = false end
+                line.Visible = false
             end
         end
     end)
 end
 
--- === GetKeyName + UpdateModeText ===
+-- === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
 local function GetKeyName(key)
     if key == Enum.KeyCode.Unknown then return "None" end
     local name = tostring(key):match("KeyCode%.(.+)") or tostring(key)
-    local pretty = {
-        LeftMouse = "LMB", RightMouse = "RMB", MiddleMouse = "MMB",
-        Space = "Space", LeftShift = "LShift", RightShift = "RShift",
-        LeftControl = "LCtrl", RightControl = "RCtrl",
-        LeftAlt = "LAlt", RightAlt = "RAlt"
-    }
+    local pretty = { LeftMouse = "LMB", RightMouse = "RMB", MiddleMouse = "MMB", Space = "Space", LeftShift = "LShift", RightShift = "RShift", LeftControl = "LCtrl", RightControl = "RCtrl", LeftAlt = "LAlt", RightAlt = "RAlt" }
     return pretty[name] or name
 end
 
-function UpdateModeText()
-    if not Gui.Mode then return end
-    Gui.Mode.Text = AutoShootStatus.ManualShot and 
-        string.format("Mode: Manual (%s)", GetKeyName(AutoShootStatus.Key)) or "Mode: Auto"
+local function UpdateModeText()
+    Gui.Mode.Text = AutoShootStatus.ManualShot and string.format("Mode: Manual (%s)", GetKeyName(AutoShootStatus.Key)) or "Mode: Auto"
 end
-
--- === ЛОГИКА ЦЕЛЕЙ (упрощенная) ===
-local GoalCFrame, GoalWidth, GoalHeight
-local TargetPoint, ShootDir, ShootVel, CurrentSpin, CurrentPower, CurrentType, NoSpinPoint
-local LastShoot = 0
-local CanShoot = true
 
 local function GetMyTeam()
     local stats = Workspace:FindFirstChild("PlayerStats")
@@ -224,6 +164,7 @@ local function GetMyTeam()
     return nil, nil
 end
 
+local GoalCFrame, GoalWidth, GoalHeight
 local function UpdateGoal()
     local myTeam, enemyGoalName = GetMyTeam()
     if not enemyGoalName then return nil, nil end
@@ -243,34 +184,97 @@ local function UpdateGoal()
     return GoalWidth, GoalHeight
 end
 
+local function GetEnemyGoalie()
+    local myTeam = GetMyTeam()
+    if not myTeam then Gui.GK.Text = "GK: None"; Gui.GK.Color = Color3.fromRGB(150,150,150); return nil, 0, 0, "None", false end
+    local width = UpdateGoal()
+    if not width then Gui.GK.Text = "GK: None"; Gui.GK.Color = Color3.fromRGB(150,150,150); return nil, 0, 0, "None", false end
+    local halfWidth = width / 2
+    local goalies = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Team and player.Team.Name ~= myTeam then
+            local char = player.Character
+            if char and char:FindFirstChild("Humanoid") and char.Humanoid.HipHeight >= 4 then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp and GoalCFrame then
+                    local distGoal = (hrp.Position - GoalCFrame.Position).Magnitude
+                    local localX = GoalCFrame:PointToObjectSpace(hrp.Position).X
+                    local localY = GoalCFrame:PointToObjectSpace(hrp.Position).Y
+                    local isInGoal = distGoal < 18 and math.abs(localX) < halfWidth + 2
+                    table.insert(goalies, { hrp=hrp, localX=localX, localY=localY, distGoal=distGoal, distPlayer=(hrp.Position - HumanoidRootPart.Position).Magnitude, name=player.Name, isInGoal=isInGoal })
+                end
+            end
+        end
+    end
+    local goalieModelName = myTeam == "Away" and "HomeGoalie" or "Goalie"
+    local goalieNPC = Workspace:FindFirstChild(goalieModelName)
+    if goalieNPC and goalieNPC:FindFirstChild("HumanoidRootPart") then
+        local hrp = goalieNPC.HumanoidRootPart
+        local distGoal = (hrp.Position - GoalCFrame.Position).Magnitude
+        local localX = GoalCFrame:PointToObjectSpace(hrp.Position).X
+        local localY = GoalCFrame:PointToObjectSpace(hrp.Position).Y
+        local isInGoal = distGoal < 18 and math.abs(localX) < halfWidth + 2
+        table.insert(goalies, { hrp=hrp, localX=localX, localY=localY, distGoal=distGoal, distPlayer=(hrp.Position - HumanoidRootPart.Position).Magnitude, name="NPC", isInGoal=isInGoal })
+    end
+    if #goalies == 0 then Gui.GK.Text = "GK: None"; Gui.GK.Color = Color3.fromRGB(150,150,150); return nil, 0, 0, "None", false end
+    table.sort(goalies, function(a, b) if a.isInGoal ~= b.isInGoal then return a.isInGoal end; return a.distGoal < b.distGoal end)
+    local best = goalies[1]
+    local isAggressive = not best.isInGoal
+    Gui.GK.Text = string.format("GK: %s %s | X=%.1f, Y=%.1f", best.name, best.isInGoal and "(In Goal)" or "(Aggressive)", best.localX, best.localY)
+    Gui.GK.Color = Color3.fromRGB(255, 200, 0)
+    return best.hrp, best.localX, best.localY, best.name, isAggressive
+end
+
+local function CalculateTrajectoryHeight(dist, power, attackName, isLowShot)
+    local cfg = AutoShootConfig.Attacks and AutoShootConfig.Attacks[attackName] or {}
+    local baseHeightRange = cfg.BaseHeightRange or {Min = 0.15, Max = 0.45}
+    local heightMult = cfg.HeightMult or 1.0
+    local baseHeight
+
+    if isLowShot then baseHeight = 0.5
+    elseif dist <= 80 then baseHeight = math.clamp(baseHeightRange.Min + (dist / 400), baseHeightRange.Min, baseHeightRange.Max)
+    elseif dist <= 100 then baseHeight = math.clamp(baseHeightRange.Min + (dist / 200), baseHeightRange.Min, baseHeightRange.Max)
+    elseif dist <= 140 then baseHeight = math.clamp(baseHeightRange.Min + (dist / 80), baseHeightRange.Min, baseHeightRange.Max)
+    else
+        baseHeight = math.clamp(8 + (dist / 25), baseHeightRange.Min, baseHeightRange.Max) * 0.9
+    end
+    local timeToTarget = dist / 200
+    local gravityFall = 0.5 * AutoShootConfig.Gravity * timeToTarget^2
+    local height = math.clamp(baseHeight + gravityFall, isLowShot and 0.5 or 2.0, AutoShootConfig.MaxHeight)
+    if power < 1.5 then height = math.clamp(height * (power / 1.5), isLowShot and 0.5 or 2.0, height) end
+    height = math.clamp(height * heightMult, isLowShot and 0.5 or 2.0, AutoShootConfig.MaxHeight)
+    return height
+end
+
+local TargetPoint, ShootDir, ShootVel, CurrentSpin, CurrentPower, CurrentType, NoSpinPoint
+local LastShoot = 0
+local CanShoot = true
+
 local function CalculateTarget()
     local width = UpdateGoal()
-    if not GoalCFrame or not width then 
-        TargetPoint = nil; NoSpinPoint = nil
-        if Gui.Target then Gui.Target.Text = "Target: --" end
-        if Gui.Power then Gui.Power.Text = "Power: --" end
-        if Gui.Spin then Gui.Spin.Text = "Spin: --" end
-        return 
-    end
+    if not GoalCFrame or not width then TargetPoint = nil; NoSpinPoint = nil; return end
 
     local dist = (HumanoidRootPart.Position - GoalCFrame.Position).Magnitude
-    if Gui.Dist then Gui.Dist.Text = string.format("Dist: %.1f (Max: %.1f)", dist, AutoShootConfig.MaxDistance) end
-    if dist > AutoShootConfig.MaxDistance then 
-        TargetPoint = nil; NoSpinPoint = nil
-        if Gui.Target then Gui.Target.Text = "Target: --" end
-        if Gui.Power then Gui.Power.Text = "Power: --" end
-        if Gui.Spin then Gui.Spin.Text = "Spin: --" end
-        return 
-    end
+    Gui.Dist.Text = string.format("Dist: %.1f (Max: %.1f)", dist, AutoShootConfig.MaxDistance)
+    if dist > AutoShootConfig.MaxDistance then TargetPoint = nil; NoSpinPoint = nil; return end
 
+    local startPos = HumanoidRootPart.Position
+    local goalDir = (GoalCFrame.Position - startPos).Unit
+    local forwardDir = (HumanoidRootPart.CFrame.LookVector).Unit
+    local playerAngle = math.deg(math.acos(goalDir:Dot(forwardDir)))
+    local goalieHrp, goalieX, goalieY, _, isAggressive = GetEnemyGoalie()
+    local goaliePos = goalieHrp and goalieHrp.Position or nil
+
+    -- Упрощённый выбор цели (без атак)
     local halfWidth = (GoalWidth / 2) - AutoShootConfig.Inset
-    local targetSide = 1  -- Простая логика
+    local targetSide = goalieX > 0 and -1 or 1
     local x = targetSide * halfWidth * 0.9
     local power = math.clamp(AutoShootConfig.MinPower + dist * AutoShootConfig.PowerPerStud, AutoShootConfig.MinPower, AutoShootConfig.MaxPower)
-    local height = 5 + dist * 0.05
+    local height = CalculateTrajectoryHeight(dist, power, "Default", false)
     local spin = dist >= 110 and (targetSide > 0 and "Right" or "Left") or "None"
+    local derivation = dist >= 110 and (spin == "Left" and 1 or -1) * (dist / 100)^1.5 * 1.3 * power or 0
 
-    local worldPos = GoalCFrame * Vector3.new(x, height, 0)
+    local worldPos = GoalCFrame * Vector3.new(x + derivation, height, 0)
     local noSpinPos = GoalCFrame * Vector3.new(x, height, 0)
 
     TargetPoint = worldPos
@@ -278,12 +282,12 @@ local function CalculateTarget()
     CurrentSpin = spin
     CurrentType = "Smart"
     CurrentPower = power
-    ShootDir = (worldPos - HumanoidRootPart.Position).Unit
+    ShootDir = (worldPos - startPos).Unit
     ShootVel = ShootDir * (power * 1400)
 
-    if Gui.Target then Gui.Target.Text = "Target: " .. CurrentType end
-    if Gui.Power then Gui.Power.Text = "Power: " .. string.format("%.2f", power) end
-    if Gui.Spin then Gui.Spin.Text = "Spin: " .. spin end
+    Gui.Target.Text = "Target: " .. CurrentType
+    Gui.Power.Text = "Power: " .. string.format("%.2f", power)
+    Gui.Spin.Text = "Spin: " .. spin
 end
 
 -- === AUTO SHOOT ===
@@ -293,38 +297,29 @@ AutoShoot.Start = function()
     if AutoShootStatus.Running then return end
     AutoShootStatus.Running = true
 
-    -- Инициализация Drawing
-    if AutoShootConfig.DebugText then
-        SetupGUI()
-        InitializeCubes()
-    end
+    SetupGUI()
+    InitializeCubes()
+    UpdateModeText()
 
-    -- Heartbeat для логики
-    HeartbeatConnection = RunService.Heartbeat:Connect(function()
+    AutoShootStatus.Connection = RunService.Heartbeat:Connect(function()
         if not AutoShootConfig.Enabled then return end
-        
         pcall(CalculateTarget)
 
         local ball = Workspace:FindFirstChild("ball")
         local hasBall = ball and ball:FindFirstChild("playerWeld") and ball.creator.Value == LocalPlayer
         local dist = GoalCFrame and (HumanoidRootPart.Position - GoalCFrame.Position).Magnitude or 999
 
-        -- Обновление статуса
-        if AutoShootConfig.DebugText and Gui.Status then
-            if hasBall and TargetPoint and dist <= AutoShootConfig.MaxDistance then
-                Gui.Status.Text = AutoShootStatus.ManualShot and 
-                    "Ready (Press " .. GetKeyName(AutoShootStatus.Key) .. ")" or "Aiming..."
-                Gui.Status.Color = Color3.fromRGB(0,255,0)
-            elseif hasBall then
-                Gui.Status.Text = dist > AutoShootConfig.MaxDistance and "Too Far" or "No Target"
-                Gui.Status.Color = Color3.fromRGB(255,100,0)
-            else
-                Gui.Status.Text = "No Ball"
-                Gui.Status.Color = Color3.fromRGB(255,165,0)
-            end
+        if hasBall and TargetPoint and dist <= AutoShootConfig.MaxDistance then
+            Gui.Status.Text = AutoShootStatus.ManualShot and "Ready (Press " .. GetKeyName(AutoShootStatus.Key) .. ")" or "Aiming..."
+            Gui.Status.Color = Color3.fromRGB(0,255,0)
+        elseif hasBall then
+            Gui.Status.Text = dist > AutoShootConfig.MaxDistance and "Too Far" or "No Target"
+            Gui.Status.Color = Color3.fromRGB(255,100,0)
+        else
+            Gui.Status.Text = "No Ball"
+            Gui.Status.Color = Color3.fromRGB(255,165,0)
         end
 
-        -- Авто-выстрел
         if hasBall and TargetPoint and dist <= AutoShootConfig.MaxDistance and not AutoShootStatus.ManualShot and tick() - LastShoot >= 0.3 then
             if AutoShootConfig.Legit and not IsAnimating then
                 IsAnimating = true
@@ -334,26 +329,9 @@ AutoShoot.Start = function()
             pcall(function()
                 Shooter:FireServer(ShootDir, BallAttachment.CFrame, CurrentPower, ShootVel, false, false, CurrentSpin, nil, false)
             end)
+            Gui.Status.Text = "AUTO SHOT! [" .. CurrentType .. "]"
+            Gui.Status.Color = Color3.fromRGB(0,255,0)
             LastShoot = tick()
-            if AutoShootConfig.DebugText and Gui.Status then
-                Gui.Status.Text = "AUTO SHOT! [" .. CurrentType .. "]"
-                Gui.Status.Color = Color3.fromRGB(0,255,0)
-            end
-        end
-    end)
-
-    -- RenderStepped для кубов
-    RenderConnection = RunService.RenderStepped:Connect(function()
-        if not AutoShootConfig.DebugText then return end
-        local width = UpdateGoal()
-        if GoalCFrame and width and GoalCube[1] then 
-            DrawOrientedCube(GoalCube, GoalCFrame, Vector3.new(width, GoalHeight, 2)) 
-        end
-        if TargetPoint and TargetCube[1] then 
-            DrawOrientedCube(TargetCube, CFrame.new(TargetPoint), Vector3.new(4,4,4)) 
-        end
-        if NoSpinPoint and NoSpinCube[1] then 
-            DrawOrientedCube(NoSpinCube, CFrame.new(NoSpinPoint), Vector3.new(3,3,3)) 
         end
     end)
 
@@ -374,39 +352,45 @@ AutoShoot.Start = function()
                     pcall(function()
                         Shooter:FireServer(ShootDir, BallAttachment.CFrame, CurrentPower, ShootVel, false, false, CurrentSpin, nil, false)
                     end)
+                    Gui.Status.Text = "MANUAL SHOT! [" .. CurrentType .. "]"
+                    Gui.Status.Color = Color3.fromRGB(0,255,0)
                     LastShoot = tick()
                     CanShoot = false
                     task.delay(0.3, function() CanShoot = true end)
-                    if AutoShootConfig.DebugText and Gui.Status then
-                        Gui.Status.Text = "MANUAL SHOT! [" .. CurrentType .. "]"
-                        Gui.Status.Color = Color3.fromRGB(0,255,0)
-                    end
                 end
             end
         end
+    end)
+
+    AutoShootStatus.RenderConnection = RunService.RenderStepped:Connect(function()
+        local width = UpdateGoal()
+        if GoalCFrame and width then DrawOrientedCube(GoalCube, GoalCFrame, Vector3.new(width, GoalHeight, 2)) else for _, l in ipairs(GoalCube) do l.Visible = false end end
+        if TargetPoint then DrawOrientedCube(TargetCube, CFrame.new(TargetPoint), Vector3.new(4,4,4)) else for _, l in ipairs(TargetCube) do l.Visible = false end end
+        if NoSpinPoint then DrawOrientedCube(NoSpinCube, CFrame.new(NoSpinPoint), Vector3.new(3,3,3)) else for _, l in ipairs(NoSpinCube) do l.Visible = false end end
     end)
 
     notify("AutoShoot", "Started", true)
 end
 
 AutoShoot.Stop = function()
-    if HeartbeatConnection then HeartbeatConnection:Disconnect(); HeartbeatConnection = nil end
-    if RenderConnection then RenderConnection:Disconnect(); RenderConnection = nil end
+    if AutoShootStatus.Connection then AutoShootStatus.Connection:Disconnect(); AutoShootStatus.Connection = nil end
+    if AutoShootStatus.RenderConnection then AutoShootStatus.RenderConnection:Disconnect(); AutoShootStatus.RenderConnection = nil end
     AutoShootStatus.Running = false
-    
-    -- Полная очистка Drawing
-    for _, obj in pairs(Gui) do
-        if obj and obj.Remove then
-            pcall(function() obj:Remove() end)
-        end
-    end
-    ClearCubes()
-    
+    for _, v in pairs(Gui) do if v.Remove then v:Remove() end end
+    for i = 1, 12 do if TargetCube[i] and TargetCube[i].Remove then TargetCube[i]:Remove() end; if GoalCube[i] and GoalCube[i].Remove then GoalCube[i]:Remove() end; if NoSpinCube[i] and NoSpinCube[i].Remove then NoSpinCube[i]:Remove() end end
     notify("AutoShoot", "Stopped", true)
+end
+
+AutoShoot.SetDebugText = function(value)
+    AutoShootStatus.DebugText = value
+    AutoShootConfig.DebugText = value
+    ToggleDebugText(value)
+    notify("AutoShoot", "Debug Text " .. (value and "Enabled" or "Disabled"), true)
 end
 
 -- === AUTO PICKUP ===
 local AutoPickup = {}
+
 AutoPickup.Start = function()
     if AutoPickupStatus.Running then return end
     AutoPickupStatus.Running = true
@@ -427,111 +411,51 @@ AutoPickup.Stop = function()
     notify("AutoPickup", "Stopped", true)
 end
 
--- === UI SETUP ===
+-- === UI ===
 local uiElements = {}
 local function SetupUI(UI)
     if UI.Sections.AutoShoot then
         UI.Sections.AutoShoot:Header({ Name = "AutoShoot" })
-        uiElements.AutoShootEnabled = UI.Sections.AutoShoot:Toggle({
-            Name = "Enabled",
-            Default = AutoShootConfig.Enabled,
-            Callback = function(v) 
-                AutoShootConfig.Enabled = v
-                if v then AutoShoot.Start() else AutoShoot.Stop() end 
-            end
-        }, "AutoShootEnabled")
-
-        uiElements.AutoShootDebug = UI.Sections.AutoShoot:Toggle({
-            Name = "Debug Text",
-            Default = AutoShootConfig.DebugText,
-            Callback = function(v)
-                AutoShootConfig.DebugText = v
-                if AutoShootStatus.Running then
-                    AutoShoot.Stop()
-                    AutoShoot.Start()
-                end
-            end
-        }, "AutoShootDebug")
-
-        uiElements.AutoShootLegit = UI.Sections.AutoShoot:Toggle({
-            Name = "Legit Animation",
-            Default = AutoShootConfig.Legit,
-            Callback = function(v) AutoShootConfig.Legit = v end
-        }, "AutoShootLegit")
-
-        uiElements.AutoShootManual = UI.Sections.AutoShoot:Toggle({
-            Name = "Manual Shot",
-            Default = AutoShootConfig.ManualShot,
-            Callback = function(v)
-                AutoShootStatus.ManualShot = v
-                AutoShootConfig.ManualShot = v
-                UpdateModeText()
-            end
-        }, "AutoShootManual")
-
-        uiElements.AutoShootKey = UI.Sections.AutoShoot:Keybind({
-            Name = "Shoot Key",
-            Default = AutoShootConfig.ShootKey,
-            Callback = function(v)
-                AutoShootStatus.Key = v
-                AutoShootConfig.ShootKey = v
-                UpdateModeText()  -- СРАЗУ обновляем текст
-            end
-        }, "AutoShootKey")
-
-        uiElements.AutoShootMaxDist = UI.Sections.AutoShoot:Slider({
-            Name = "Max Distance",
-            Minimum = 50, Maximum = 300, Default = AutoShootConfig.MaxDistance, Precision = 1,
-            Callback = function(v) AutoShootConfig.MaxDistance = v end
-        }, "AutoShootMaxDist")
+        uiElements.AutoShootEnabled = UI.Sections.AutoShoot:Toggle({ Name = "Enabled", Default = AutoShootConfig.Enabled, Callback = function(v) AutoShootConfig.Enabled = v; if v then AutoShoot.Start() else AutoShoot.Stop() end end }, "AutoShootEnabled")
+        uiElements.AutoShootLegit = UI.Sections.AutoShoot:Toggle({ Name = "Legit Animation", Default = AutoShootConfig.Legit, Callback = function(v) AutoShootConfig.Legit = v end }, "AutoShootLegit")
+        uiElements.AutoShootManual = UI.Sections.AutoShoot:Toggle({ Name = "Manual Shot", Default = AutoShootConfig.ManualShot, Callback = function(v) AutoShootStatus.ManualShot = v; AutoShootConfig.ManualShot = v; UpdateModeText() end }, "AutoShootManual")
+        uiElements.AutoShootKey = UI.Sections.AutoShoot:Keybind({ Name = "Shoot Key", Default = AutoShootConfig.ShootKey, Callback = function(v) AutoShootStatus.Key = v; AutoShootConfig.ShootKey = v; UpdateModeText() end }, "AutoShootKey")
+        uiElements.AutoShootMaxDist = UI.Sections.AutoShoot:Slider({ Name = "Max Distance", Minimum = 50, Maximum = 300, Default = AutoShootConfig.MaxDistance, Precision = 1, Callback = function(v) AutoShootConfig.MaxDistance = v end }, "AutoShootMaxDist")
+        uiElements.AutoShootDebugText = UI.Sections.AutoShoot:Toggle({ Name = "Debug Text", Default = AutoShootConfig.DebugText, Callback = function(v) AutoShoot.SetDebugText(v) end }, "AutoShootDebugText")
     end
 
     if UI.Sections.AutoPickup then
         UI.Sections.AutoPickup:Header({ Name = "AutoPickup" })
-        uiElements.AutoPickupEnabled = UI.Sections.AutoPickup:Toggle({
-            Name = "Enabled",
-            Default = AutoPickupConfig.Enabled,
-            Callback = function(v) 
-                AutoPickupConfig.Enabled = v
-                if v then AutoPickup.Start() else AutoPickup.Stop() end 
-            end
-        }, "AutoPickupEnabled")
-        uiElements.AutoPickupDist = UI.Sections.AutoPickup:Slider({
-            Name = "Pickup Distance", Minimum = 50, Maximum = 300, Default = AutoPickupConfig.PickupDist, Precision = 1,
-            Callback = function(v) AutoPickupConfig.PickupDist = v end
-        }, "AutoPickupDist")
-        uiElements.AutoPickupSpoof = UI.Sections.AutoPickup:Slider({
-            Name = "Spoof Value", Minimum = 0.1, Maximum = 5.0, Default = AutoPickupConfig.SpoofValue, Precision = 2,
-            Callback = function(v) AutoPickupConfig.SpoofValue = v end
-        }, "AutoPickupSpoof")
+        uiElements.AutoPickupEnabled = UI.Sections.AutoPickup:Toggle({ Name = "Enabled", Default = AutoPickupConfig.Enabled, Callback = function(v) AutoPickupConfig.Enabled = v; if v then AutoPickup.Start() else AutoPickup.Stop() end end }, "AutoPickupEnabled")
+        uiElements.AutoPickupDist = UI.Sections.AutoPickup:Slider({ Name = "Pickup Distance", Minimum = 50, Maximum = 300, Default = AutoPickupConfig.PickupDist, Precision = 1, Callback = function(v) AutoPickupConfig.PickupDist = v end }, "AutoPickupDist")
+        uiElements.AutoPickupSpoof = UI.Sections.AutoPickup:Slider({ Name = "Spoof Value", Minimum = 0.1, Maximum = 5.0, Default = AutoPickupConfig.SpoofValue, Precision = 2, Callback = function(v) AutoPickupConfig.SpoofValue = v end }, "AutoPickupSpoof")
     end
 
-    -- Sync
-    local syncSection = UI.Tabs.Config:Section({ Name = "AutoShoot Sync", Side = "Right" })
-    syncSection:Button({
-        Name = "Sync Config",
-        Callback = function()
-            AutoShootConfig.Enabled = uiElements.AutoShootEnabled:GetState()
-            AutoShootConfig.DebugText = uiElements.AutoShootDebug:GetState()
-            AutoShootConfig.Legit = uiElements.AutoShootLegit:GetState()
-            AutoShootConfig.ManualShot = uiElements.AutoShootManual:GetState()
-            AutoShootConfig.ShootKey = uiElements.AutoShootKey:GetBind()
-            AutoShootConfig.MaxDistance = uiElements.AutoShootMaxDist:GetValue()
+    local syncSection = UI.Tabs.Config:Section({ Name = "AutoShoot & AutoPickup Sync", Side = "Right" })
+    syncSection:Header({ Name = "Sync" })
+    syncSection:Button({ Name = "Sync Config", Callback = function()
+        AutoShootConfig.Enabled = uiElements.AutoShootEnabled:GetState()
+        AutoShootConfig.Legit = uiElements.AutoShootLegit:GetState()
+        AutoShootConfig.ManualShot = uiElements.AutoShootManual:GetState()
+        AutoShootConfig.ShootKey = uiElements.AutoShootKey:GetBind()
+        AutoShootConfig.MaxDistance = uiElements.AutoShootMaxDist:GetValue()
+        AutoShootConfig.DebugText = uiElements.AutoShootDebugText:GetState()
 
-            AutoPickupConfig.Enabled = uiElements.AutoPickupEnabled:GetState()
-            AutoPickupConfig.PickupDist = uiElements.AutoPickupDist:GetValue()
-            AutoPickupConfig.SpoofValue = uiElements.AutoPickupSpoof:GetValue()
+        AutoPickupConfig.Enabled = uiElements.AutoPickupEnabled:GetState()
+        AutoPickupConfig.PickupDist = uiElements.AutoPickupDist:GetValue()
+        AutoPickupConfig.SpoofValue = uiElements.AutoPickupSpoof:GetValue()
 
-            AutoShootStatus.Key = AutoShootConfig.ShootKey
-            AutoShootStatus.ManualShot = AutoShootConfig.ManualShot
-            UpdateModeText()
+        AutoShootStatus.Key = AutoShootConfig.ShootKey
+        AutoShootStatus.ManualShot = AutoShootConfig.ManualShot
+        AutoShootStatus.DebugText = AutoShootConfig.DebugText
+        UpdateModeText()
+        ToggleDebugText(AutoShootStatus.DebugText)
 
-            if AutoShootConfig.Enabled then AutoShoot.Start() else AutoShoot.Stop() end
-            if AutoPickupConfig.Enabled then AutoPickup.Start() else AutoPickup.Stop() end
+        if AutoShootConfig.Enabled then if not AutoShootStatus.Running then AutoShoot.Start() end else if AutoShootStatus.Running then AutoShoot.Stop() end end
+        if AutoPickupConfig.Enabled then if not AutoPickupStatus.Running then AutoPickup.Start() end else if AutoPickupStatus.Running then AutoPickup.Stop() end end
 
-            notify("Syllinse", "Config synchronized!", true)
-        end
-    })
+        notify("Syllinse", "Config synchronized!", true)
+    end })
 end
 
 -- === МОДУЛЬ ===
@@ -554,8 +478,9 @@ function AutoShootModule.Init(UI, coreParam, notifyFunc)
         BallAttachment = newChar:WaitForChild("ball")
         RShootAnim = Humanoid:LoadAnimation(Animations:WaitForChild("RShoot"))
         RShootAnim.Priority = Enum.AnimationPriority.Action4
-        GoalCFrame = nil; TargetPoint = nil; NoSpinPoint = nil
-        LastShoot = 0; IsAnimating = false; CanShoot = true
+        GoalCFrame = nil; TargetPoint = nil; NoSpinPoint = nil; LastShoot = 0; IsAnimating = false; CanShoot = true
+        if AutoShootConfig.Enabled then AutoShoot.Start() end
+        if AutoPickupConfig.Enabled then AutoPickup.Start() end
     end)
 end
 
