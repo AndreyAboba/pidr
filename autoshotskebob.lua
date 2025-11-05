@@ -1,4 +1,5 @@
--- [v35.44] AUTO SHOOT + AUTO PICKUP + FULL GUI + ALL ATTACKS (100% РАБОЧАЯ)
+-- [v35.44] AUTO SHOOT + AUTO PICKUP + FULL GUI + UI + ALL ATTACKS (ПОЛНАЯ ВЕРСИЯ)
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -40,7 +41,7 @@ local AutoShootConfig = {
     MaxPower = 7.0,
     PowerPerStud = 0.025,
     MaxHeight = 100.0,
-    DebugText = true,
+    DebugText = true,  -- НОВАЯ НАСТРОЙКА
     Attacks = {
         SideRicochet = { Enabled = true, MinDist = 0, MaxDist = 60, Power = 3.5, XMult = 0.8, Spin = "None", HeightMult = 1.0, BaseHeightRange = {Min = 0.15, Max = 0.34}, DerivationMult = 0.0, ZOffset = 2.0 },
         CloseSpin = { Enabled = true, MinDist = 0, MaxDist = 110, Power = 3.2, XMult = 1.1, Spin = true, HeightMult = 1.1, BaseHeightRange = {Min = 0.3, Max = 0.9}, DerivationMult = 0.8, ZOffset = -5.0 },
@@ -85,17 +86,21 @@ end
 local function SetupGUI()
     local s = Camera.ViewportSize
     local cx, y = s.X / 2, s.Y * 0.48
-    local texts = {"Status", "Dist", "Target", "Power", "Spin", "GK", "Debug", "Mode"}
-    for i, name in ipairs(texts) do
-        Gui[name] = CreateDrawing("Text")
-        Gui[name].Size = 18
-        Gui[name].Color = Color3.fromRGB(255, 255, 255)
-        Gui[name].Outline = true
-        Gui[name].Center = true
-        Gui[name].Position = Vector2.new(cx, y + (i-1)*20)
+
+    Gui.Status = CreateDrawing("Text"); Gui.Dist = CreateDrawing("Text"); Gui.Target = CreateDrawing("Text")
+    Gui.Power = CreateDrawing("Text"); Gui.Spin = CreateDrawing("Text"); Gui.GK = CreateDrawing("Text")
+    Gui.Debug = CreateDrawing("Text"); Gui.Mode = CreateDrawing("Text")
+
+    local texts = {Gui.Status, Gui.Dist, Gui.Target, Gui.Power, Gui.Spin, Gui.GK, Gui.Debug, Gui.Mode}
+    for i, v in ipairs(texts) do
+        v.Size = 18; v.Color = Color3.fromRGB(255, 255, 255); v.Outline = true; v.Center = true
+        v.Position = Vector2.new(cx, y + (i-1)*20)
     end
+
     Gui.Status.Text = "v35.44: Ready"
-    Gui.Debug.Visible = AutoShootConfig.DebugText
+    Gui.Dist.Text = "Dist: --"; Gui.Target.Text = "Target: --"
+    Gui.Power.Text = "Power: --"; Gui.Spin.Text = "Spin: --"; Gui.GK.Text = "GK: --"
+    Gui.Debug.Text = "Debug: Initializing"; Gui.Mode.Text = "Mode: Manual (E)"
 end
 
 local function InitializeCubes()
@@ -106,15 +111,23 @@ local function InitializeCubes()
     end
     local function SetupCube(cube, color, thickness)
         for _, line in ipairs(cube) do
-            line.Color = color
-            line.Thickness = thickness or 2
-            line.Transparency = 0.7
-            line.ZIndex = 1000
+            line.Color = color; line.Thickness = thickness; line.Transparency = 0.7; line.ZIndex = 1000
         end
     end
     SetupCube(TargetCube, Color3.fromRGB(0, 255, 0), 6)
     SetupCube(GoalCube, Color3.fromRGB(255, 0, 0), 4)
     SetupCube(NoSpinCube, Color3.fromRGB(0, 255, 255), 5)
+end
+
+local function ClearAllDrawings()
+    for _, v in pairs(Gui) do if v and v.Remove then v:Remove() end end
+    Gui = {}
+    for i = 1, 12 do
+        if TargetCube[i] and TargetCube[i].Remove then TargetCube[i]:Remove() end
+        if GoalCube[i] and GoalCube[i].Remove then GoalCube[i]:Remove() end
+        if NoSpinCube[i] and NoSpinCube[i].Remove then NoSpinCube[i]:Remove() end
+    end
+    TargetCube, GoalCube, NoSpinCube = {}, {}, {}
 end
 
 local function DrawOrientedCube(cube, cframe, size)
@@ -147,7 +160,7 @@ local function DrawOrientedCube(cube, cframe, size)
     end)
 end
 
--- === ВСПОМОГАТЕЛЬНЫЕ ===
+-- === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
 local function GetKeyName(key)
     if key == Enum.KeyCode.Unknown then return "None" end
     local name = tostring(key):match("KeyCode%.(.+)") or tostring(key)
@@ -156,14 +169,16 @@ local function GetKeyName(key)
 end
 
 local function UpdateModeText()
-    Gui.Mode.Text = AutoShootStatus.ManualShot and string.format("Mode: Manual (%s)", GetKeyName(AutoShootStatus.Key)) or "Mode: Auto"
+    if Gui.Mode then
+        Gui.Mode.Text = AutoShootStatus.ManualShot and string.format("Mode: Manual (%s)", GetKeyName(AutoShootStatus.Key)) or "Mode: Auto"
+    end
 end
 
 local function GetMyTeam()
     local stats = Workspace:FindFirstChild("PlayerStats")
     if not stats then return nil, nil end
-    if stats:FindFirstChild("Away") and stats.Away:FindFirstChild(LocalPlayer.Name) then return "Away", "HomeGoal" end
-    if stats:FindFirstChild("Home") and stats.Home:FindFirstChild(LocalPlayer.Name) then return "Home", "AwayGoal" end
+    if stats:FindFirstChild("Away") and stats.Away:FindFirstChild(LocalPlayer.Name) then return "Away", "HomeGoal"
+    elseif stats:FindFirstChild("Home") and stats.Home:FindFirstChild(LocalPlayer.Name) then return "Home", "AwayGoal" end
     return nil, nil
 end
 
@@ -189,9 +204,9 @@ end
 
 local function GetEnemyGoalie()
     local myTeam = GetMyTeam()
-    if not myTeam then Gui.GK.Text = "GK: None"; Gui.GK.Color = Color3.fromRGB(150,150,150); return nil, 0, 0, "None", false end
+    if not myTeam then if Gui.GK then Gui.GK.Text = "GK: None"; Gui.GK.Color = Color3.fromRGB(150,150,150) end; return nil, 0, 0, "None", false end
     local width = UpdateGoal()
-    if not width then Gui.GK.Text = "GK: None"; Gui.GK.Color = Color3.fromRGB(150,150,150); return nil, 0, 0, "None", false end
+    if not width then if Gui.GK then Gui.GK.Text = "GK: None"; Gui.GK.Color = Color3.fromRGB(150,150,150) end; return nil, 0, 0, "None", false end
     local halfWidth = width / 2
     local goalies = {}
     for _, player in ipairs(Players:GetPlayers()) do
@@ -204,7 +219,7 @@ local function GetEnemyGoalie()
                     local localX = GoalCFrame:PointToObjectSpace(hrp.Position).X
                     local localY = GoalCFrame:PointToObjectSpace(hrp.Position).Y
                     local isInGoal = distGoal < 18 and math.abs(localX) < halfWidth + 2
-                    table.insert(goalies, { hrp=hrp, localX=localX, localY=localY, distGoal=distGoal, name=player.Name, isInGoal=isInGoal })
+                    table.insert(goalies, { hrp=hrp, localX=localX, localY=localY, distGoal=distGoal, distPlayer=(hrp.Position - HumanoidRootPart.Position).Magnitude, name=player.Name, isInGoal=isInGoal })
                 end
             end
         end
@@ -217,14 +232,17 @@ local function GetEnemyGoalie()
         local localX = GoalCFrame:PointToObjectSpace(hrp.Position).X
         local localY = GoalCFrame:PointToObjectSpace(hrp.Position).Y
         local isInGoal = distGoal < 18 and math.abs(localX) < halfWidth + 2
-        table.insert(goalies, { hrp=hrp, localX=localX, localY=localY, distGoal=distGoal, name="NPC", isInGoal=isInGoal })
+        table.insert(goalies, { hrp=hrp, localX=localX, localY=localY, distGoal=distGoal, distPlayer=(hrp.Position - HumanoidRootPart.Position).Magnitude, name="NPC", isInGoal=isInGoal })
     end
-    if #goalies == 0 then Gui.GK.Text = "GK: None"; Gui.GK.Color = Color3.fromRGB(150,150,150); return nil, 0, 0, "None", false end
-    table.sort(goalies, function(a, b) return a.isInGoal == b.isInGoal and a.distGoal < b.distGoal or a.isInGoal end)
+    if #goalies == 0 then if Gui.GK then Gui.GK.Text = "GK: None"; Gui.GK.Color = Color3.fromRGB(150,150,150) end; return nil, 0, 0, "None", false end
+    table.sort(goalies, function(a, b) if a.isInGoal ~= b.isInGoal then return a.isInGoal end; return a.distGoal < b.distGoal end)
     local best = goalies[1]
-    Gui.GK.Text = string.format("GK: %s %s | X=%.1f Y=%.1f", best.name, best.isInGoal and "(In)" or "(Out)", best.localX, best.localY)
-    Gui.GK.Color = Color3.fromRGB(255, 200, 0)
-    return best.hrp, best.localX, best.localY, best.name, not best.isInGoal
+    local isAggressive = not best.isInGoal
+    if Gui.GK then
+        Gui.GK.Text = string.format("GK: %s %s | X=%.1f, Y=%.1f", best.name, best.isInGoal and "(In Goal)" or "(Aggressive)", best.localX, best.localY)
+        Gui.GK.Color = Color3.fromRGB(255, 200, 0)
+    end
+    return best.hrp, best.localX, best.localY, best.name, isAggressive
 end
 
 local function CalculateTrajectoryHeight(dist, power, attackName, isLowShot)
@@ -233,23 +251,35 @@ local function CalculateTrajectoryHeight(dist, power, attackName, isLowShot)
     local heightMult = cfg.HeightMult or 1.0
     local baseHeight
 
-    if isLowShot then baseHeight = 0.5
-    elseif dist <= 80 then baseHeight = math.clamp(baseHeightRange.Min + (dist / 400), baseHeightRange.Min, baseHeightRange.Max)
-    elseif dist <= 100 then baseHeight = math.clamp(baseHeightRange.Min + (dist / 200), baseHeightRange.Min, baseHeightRange.Max)
-    elseif dist <= 140 then baseHeight = math.clamp(baseHeightRange.Min + (dist / 80), baseHeightRange.Min, baseHeightRange.Max)
+    if isLowShot then
+        baseHeight = 0.5
+    elseif dist <= 80 then
+        baseHeight = math.clamp(baseHeightRange.Min + (dist / 400), baseHeightRange.Min, baseHeightRange.Max)
+    elseif dist <= 100 then
+        baseHeight = math.clamp(baseHeightRange.Min + (dist / 200), baseHeightRange.Min, baseHeightRange.Max)
+    elseif dist <= 140 then
+        baseHeight = math.clamp(baseHeightRange.Min + (dist / 80), baseHeightRange.Min, baseHeightRange.Max)
     else
-        if attackName == "SmartCandle" then baseHeight = math.clamp(8 + (dist / 25), baseHeightRange.Min, baseHeightRange.Max) * (dist >= 180 and 0.6 or 0.75)
-        elseif attackName == "FarSmartCandle" then baseHeight = math.clamp(40 + (dist / 5), baseHeightRange.Min, baseHeightRange.Max) * (dist >= 250 and 2.2 or 2.0)
-        else baseHeight = math.clamp(8 + (dist / 25), baseHeightRange.Min, baseHeightRange.Max) * 0.9 end
+        if attackName == "SmartCandle" then
+            baseHeight = math.clamp(8 + (dist / 25), baseHeightRange.Min, baseHeightRange.Max) * (dist >= 180 and 0.6 or 0.75)
+        elseif attackName == "FarSmartCandle" then
+            baseHeight = math.clamp(40 + (dist / 5), baseHeightRange.Min, baseHeightRange.Max) * (dist >= 250 and 2.2 or 2.0)
+        else
+            baseHeight = math.clamp(8 + (dist / 25), baseHeightRange.Min, baseHeightRange.Max) * 0.9
+        end
     end
+
     local timeToTarget = dist / 200
     local gravityFall = attackName == "FarSmartCandle" and 10 or 0.5 * AutoShootConfig.Gravity * timeToTarget^2
     local height = math.clamp(baseHeight + gravityFall, isLowShot and 0.5 or 2.0, AutoShootConfig.MaxHeight)
-    if power < 1.5 and attackName ~= "FarSmartCandle" then height = math.clamp(height * (power / 1.5), isLowShot and 0.5 or 2.0, height) end
+    if power < 1.5 and attackName ~= "FarSmartCandle" then
+        height = math.clamp(height * (power / 1.5), isLowShot and 0.5 or 2.0, height)
+    end
     height = math.clamp(height * heightMult, isLowShot and 0.5 or 2.0, AutoShootConfig.MaxHeight)
-    return height
+    return height, timeToTarget, gravityFall, baseHeight
 end
 
+-- === ПОЛНЫЙ РАСЧЁТ ЦЕЛИ (ВСЕ АТАКИ) ===
 local TargetPoint, ShootDir, ShootVel, CurrentSpin, CurrentPower, CurrentType, NoSpinPoint
 local LastShoot = 0
 local CanShoot = true
@@ -269,11 +299,11 @@ local function GetTarget(dist, goalieX, goalieY, isAggressive, goaliePos, player
 
     local candidates = {}
     local ricochetPoints = {
-        {x=halfWidth, y=halfHeight, normal=Vector3.new(-1,0,0), type="RightPost"},
-        {x=-halfWidth, y=halfHeight, normal=Vector3.new(1,0,0), type="LeftPost"},
-        {x=0, y=GoalHeight-0.5, normal=Vector3.new(0,-1,0), type="Crossbar"},
-        {x=halfWidth, y=0.5, normal=Vector3.new(-1,0,0), type="RightLower"},
-        {x=-halfWidth, y=0.5, normal=Vector3.new(1,0,0), type="LeftLower"}
+        {x=halfWidth, y=halfHeight, normal=Vector3.new(-1, 0, 0), type="RightPost"},
+        {x=-halfWidth, y=halfHeight, normal=Vector3.new(1, 0, 0), type="LeftPost"},
+        {x=0, y=GoalHeight-0.5, normal=Vector3.new(0, -1, 0), type="Crossbar"},
+        {x=halfWidth, y=0.5, normal=Vector3.new(-1, 0, 0), type="RightLower"},
+        {x=-halfWidth, y=0.5, normal=Vector3.new(1, 0, 0), type="LeftLower"}
     }
 
     for name, cfg in pairs(AutoShootConfig.Attacks) do
@@ -299,13 +329,13 @@ local function GetTarget(dist, goalieX, goalieY, isAggressive, goaliePos, player
             local derivation = 0
             if cfg.Spin and (dist >= 110 or name == "CloseSpin") then
                 local derivationBase = (dist / 100)^1.5 * (cfg.DerivationMult or 1.3) * power
-                if name == "CloseSpin and isOffAngle then derivationBase = derivationBase * (math.abs(playerAngle) / 45) end
+                if name == "CloseSpin" and isOffAngle then derivationBase = derivationBase * (math.abs(playerAngle) / 45) end
                 derivation = (spin == "Left" and 1 or -1) * derivationBase
                 if dist < 80 then derivation = derivation * (dist / 80) end
             elseif name == "SideRicochet" or name == "SmartCorner" then
                 derivation = math.random(-0.5, 0.5)
             end
-            local height = CalculateTrajectoryHeight(dist, power, name, isLowShot)
+            local height, timeToTarget, gravityFall, baseHeight = CalculateTrajectoryHeight(dist, power, name, isLowShot)
             if heightAdjust > 0 then height = math.clamp(heightAdjust, 2.0, AutoShootConfig.MaxHeight)
             elseif isLowShot then height = 0.5 end
             local noSpinPos = GoalCFrame * Vector3.new(math.clamp(x + randX, -halfWidth+0.5, halfWidth-0.5), height + randY, 0)
@@ -345,7 +375,7 @@ local function CalculateTarget()
     if not GoalCFrame or not width then TargetPoint = nil; NoSpinPoint = nil; return end
 
     local dist = (HumanoidRootPart.Position - GoalCFrame.Position).Magnitude
-    Gui.Dist.Text = string.format("Dist: %.1f (Max: %.1f)", dist, AutoShootConfig.MaxDistance)
+    if Gui.Dist then Gui.Dist.Text = string.format("Dist: %.1f (Max: %.1f)", dist, AutoShootConfig.MaxDistance) end
     if dist > AutoShootConfig.MaxDistance then TargetPoint = nil; NoSpinPoint = nil; return end
 
     local startPos = HumanoidRootPart.Position
@@ -365,9 +395,9 @@ local function CalculateTarget()
     ShootDir = (worldTarget - startPos).Unit
     ShootVel = ShootDir * (power * 1400)
 
-    Gui.Target.Text = "Target: " .. CurrentType
-    Gui.Power.Text = "Power: " .. string.format("%.2f", power)
-    Gui.Spin.Text = "Spin: " .. spin
+    if Gui.Target then Gui.Target.Text = "Target: " .. CurrentType end
+    if Gui.Power then Gui.Power.Text = "Power: " .. string.format("%.2f", power) end
+    if Gui.Spin then Gui.Spin.Text = "Spin: " .. spin end
 end
 
 -- === AUTO SHOOT ===
@@ -390,13 +420,20 @@ AutoShoot.Start = function()
         local dist = GoalCFrame and (HumanoidRootPart.Position - GoalCFrame.Position).Magnitude or 999
 
         if hasBall and TargetPoint and dist <= AutoShootConfig.MaxDistance then
-            Gui.Status.Text = AutoShootStatus.ManualShot and "Ready (Press " .. GetKeyName(AutoShootStatus.Key) .. ")" or "Aiming..."
-            Gui.Status.Color = Color3.fromRGB(0,255,0)
-        elseif hasBall then, Gui.Status.Text = dist > AutoShootConfig.MaxDistance and "Too Far" or "No Target"
-            Gui.Status.Color = Color3.fromRGB(255,100,0)
+            if Gui.Status then
+                Gui.Status.Text = AutoShootStatus.ManualShot and "Ready (Press " .. GetKeyName(AutoShootStatus.Key) .. ")" or "Aiming..."
+                Gui.Status.Color = Color3.fromRGB(0,255,0)
+            end
+        elseif hasBall then
+            if Gui.Status then
+                Gui.Status.Text = dist > AutoShootConfig.MaxDistance and "Too Far" or "No Target"
+                Gui.Status.Color = Color3.fromRGB(255,100,0)
+            end
         else
-            Gui.Status.Text = "No Ball"
-            Gui.Status.Color = Color3.fromRGB(255,165,0)
+            if Gui.Status then
+                Gui.Status.Text = "No Ball"
+                Gui.Status.Color = Color3.fromRGB(255,165,0)
+            end
         end
 
         if hasBall and TargetPoint and dist <= AutoShootConfig.MaxDistance and not AutoShootStatus.ManualShot and tick() - LastShoot >= 0.3 then
@@ -408,13 +445,17 @@ AutoShoot.Start = function()
             pcall(function()
                 Shooter:FireServer(ShootDir, BallAttachment.CFrame, CurrentPower, ShootVel, false, false, CurrentSpin, nil, false)
             end)
-            Gui.Status.Text = "AUTO SHOT! [" .. CurrentType .. "]"
-            Gui.Status.Color = Color3.fromRGB(0,255,0)
+            if Gui.Status then
+                Gui.Status.Text = "AUTO SHOT! [" .. CurrentType .. "]"
+                Gui.Status.Color = Color3.fromRGB(0,255,0)
+            end
             LastShoot = tick()
         end
     end)
 
-    UserInputService.InputBegan:Connect(function(inp, gp)
+    -- Ручной выстрел
+    local inputConn
+    inputConn = UserInputService.InputBegan:Connect(function(inp, gp)
         if gp or not AutoShootConfig.Enabled or not AutoShootStatus.ManualShot or not CanShoot then return end
         if inp.KeyCode == AutoShootStatus.Key then
             local ball = Workspace:FindFirstChild("ball")
@@ -430,8 +471,10 @@ AutoShoot.Start = function()
                     pcall(function()
                         Shooter:FireServer(ShootDir, BallAttachment.CFrame, CurrentPower, ShootVel, false, false, CurrentSpin, nil, false)
                     end)
-                    Gui.Status.Text = "MANUAL SHOT! [" .. CurrentType .. "]"
-                    Gui.Status.Color = Color3.fromRGB(0,255,0)
+                    if Gui.Status then
+                        Gui.Status.Text = "MANUAL SHOT! [" .. CurrentType .. "]"
+                        Gui.Status.Color = Color3.fromRGB(0,255,0)
+                    end
                     LastShoot = tick()
                     CanShoot = false
                     task.delay(0.3, function() CanShoot = true end)
@@ -440,26 +483,34 @@ AutoShoot.Start = function()
         end
     end)
 
-    RunService.RenderStepped:Connect(function()
+    local renderConn = RunService.RenderStepped:Connect(function()
         local width = UpdateGoal()
         if GoalCFrame and width then DrawOrientedCube(GoalCube, GoalCFrame, Vector3.new(width, GoalHeight, 2)) end
         if TargetPoint then DrawOrientedCube(TargetCube, CFrame.new(TargetPoint), Vector3.new(4,4,4)) end
         if NoSpinPoint then DrawOrientedCube(NoSpinCube, CFrame.new(NoSpinPoint), Vector3.new(3,3,3)) end
+        if Gui.Debug and AutoShootConfig.DebugText then
+            Gui.Debug.Visible = true
+            Gui.Debug.Text = string.format("Angle: %.1f° | GK: %.1f,%.1f | Spin: %s", 
+                math.deg(math.acos((GoalCFrame.Position - HumanoidRootPart.Position).Unit:Dot(HumanoidRootPart.CFrame.LookVector))),
+                goalieX or 0, goalieY or 0, CurrentSpin or "None")
+        else
+            if Gui.Debug then Gui.Debug.Visible = false end
+        end
     end)
+
+    -- Сохраняем соединения для очистки
+    AutoShootStatus.InputConn = inputConn
+    AutoShootStatus.RenderConn = renderConn
 
     notify("AutoShoot", "Started", true)
 end
 
 AutoShoot.Stop = function()
     if AutoShootStatus.Connection then AutoShootStatus.Connection:Disconnect() end
+    if AutoShootStatus.InputConn then AutoShootStatus.InputConn:Disconnect() end
+    if AutoShootStatus.RenderConn then AutoShootStatus.RenderConn:Disconnect() end
     AutoShootStatus.Running = false
-    for _, obj in pairs(Gui) do if obj.Remove then obj:Remove() end end
-    for i = 1, 12 do
-        if TargetCube[i] and TargetCube[i].Remove then TargetCube[i]:Remove() end
-        if GoalCube[i] and GoalCube[i].Remove then GoalCube[i]:Remove() end
-        if NoSpinCube[i] and NoSpinCube[i].Remove then NoSpinCube[i]:Remove() end
-    end
-    Gui = {}; TargetCube = {}; GoalCube = {}; NoSpinCube = {}
+    ClearAllDrawings()
     notify("AutoShoot", "Stopped", true)
 end
 
@@ -496,7 +547,7 @@ local function SetupUI(UI)
         uiElements.AutoShootManual = UI.Sections.AutoShoot:Toggle({ Name = "Manual Shot", Default = AutoShootConfig.ManualShot, Callback = function(v) AutoShootStatus.ManualShot = v; AutoShootConfig.ManualShot = v; UpdateModeText() end }, "AutoShootManual")
         uiElements.AutoShootKey = UI.Sections.AutoShoot:Keybind({ Name = "Shoot Key", Default = AutoShootConfig.ShootKey, Callback = function(v) AutoShootStatus.Key = v; AutoShootConfig.ShootKey = v; UpdateModeText() end }, "AutoShootKey")
         uiElements.AutoShootMaxDist = UI.Sections.AutoShoot:Slider({ Name = "Max Distance", Minimum = 50, Maximum = 300, Default = AutoShootConfig.MaxDistance, Precision = 1, Callback = function(v) AutoShootConfig.MaxDistance = v end }, "AutoShootMaxDist")
-        uiElements.DebugText = UI.Sections.AutoShoot:Toggle({ Name = "Debug Text", Default = AutoShootConfig.DebugText, Callback = function(v) AutoShootConfig.DebugText = v; Gui.Debug.Visible = v end }, "DebugText")
+        uiElements.AutoShootDebug = UI.Sections.AutoShoot:Toggle({ Name = "Debug Text", Default = AutoShootConfig.DebugText, Callback = function(v) AutoShootConfig.DebugText = v end }, "AutoShootDebug")
     end
 
     if UI.Sections.AutoPickup then
@@ -514,7 +565,7 @@ local function SetupUI(UI)
         AutoShootConfig.ManualShot = uiElements.AutoShootManual:GetState()
         AutoShootConfig.ShootKey = uiElements.AutoShootKey:GetBind()
         AutoShootConfig.MaxDistance = uiElements.AutoShootMaxDist:GetValue()
-        AutoShootConfig.DebugText = uiElements.DebugText:GetState()
+        AutoShootConfig.DebugText = uiElements.AutoShootDebug:GetState()
 
         AutoPickupConfig.Enabled = uiElements.AutoPickupEnabled:GetState()
         AutoPickupConfig.PickupDist = uiElements.AutoPickupDist:GetValue()
@@ -522,7 +573,6 @@ local function SetupUI(UI)
 
         AutoShootStatus.Key = AutoShootConfig.ShootKey
         AutoShootStatus.ManualShot = AutoShootConfig.ManualShot
-        Gui.Debug.Visible = AutoShootConfig.DebugText
         UpdateModeText()
 
         if AutoShootConfig.Enabled then if not AutoShootStatus.Running then AutoShoot.Start() end else if AutoShootStatus.Running then AutoShoot.Stop() end end
