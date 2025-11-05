@@ -1,10 +1,11 @@
--- [v35.43] AUTO SHOOT + AUTO PICKUP + FULL GUI + UI INTEGRATION (ФИНАЛЬНАЯ ВЕРСИЯ)
+-- [v35.43] AUTO SHOOT + AUTO PICKUP + FULL GUI + UI INTEGRATION (ИСПРАВЛЕНО: Target, Notify, Manual Button)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local Camera = Workspace.CurrentCamera
 local UserInputService = game:GetService("UserInputService")
+local CoreGuiService = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
@@ -96,9 +97,7 @@ local function SetupGUI()
 end
 
 local function ToggleDebugText(value)
-    for _, v in pairs(Gui) do
-        v.Visible = value
-    end
+    for _, v in pairs(Gui) do v.Visible = value end
 end
 
 -- === 3D CUBES ===
@@ -254,7 +253,7 @@ local function CalculateTrajectoryHeight(dist, power, attackName, isLowShot)
     local height = math.clamp(baseHeight + gravityFall, isLowShot and 0.5 or 2.0, AutoShootConfig.MaxHeight)
     if power < 1.5 and attackName ~= "FarSmartCandle" then height = math.clamp(height * (power / 1.5), isLowShot and 0.5 or 2.0, height) end
     height = math.clamp(height * heightMult, isLowShot and 0.5 or 2.0, AutoShootConfig.MaxHeight)
-    return height
+    return height, timeToTarget, gravityFall, baseHeight
 end
 
 local TargetPoint, ShootDir, ShootVel, CurrentSpin, CurrentPower, CurrentType, NoSpinPoint
@@ -312,7 +311,7 @@ local function GetTarget(dist, goalieX, goalieY, isAggressive, goaliePos, player
             elseif name == "SideRicochet" or name == "SmartCorner" then
                 derivation = math.random(-0.5, 0.5)
             end
-            local height, _, _, _ = CalculateTrajectoryHeight(dist, power, name, isLowShot)
+            local height = CalculateTrajectoryHeight(dist, power, name, isLowShot)
             if heightAdjust > 0 then height = math.clamp(heightAdjust, 2.0, AutoShootConfig.MaxHeight)
             elseif isLowShot then height = 0.5 end
             local noSpinPos = GoalCFrame * Vector3.new(math.clamp(x + randX, -halfWidth+0.5, halfWidth-0.5), height + randY, 0)
@@ -333,7 +332,7 @@ local function GetTarget(dist, goalieX, goalieY, isAggressive, goaliePos, player
             if name == "SmartCorner" and ricochetNormal then
                 local reflectDir = shootDir - 2 * shootDir:Dot(ricochetNormal) * ricochetNormal
                 local reflectAwayFromGoalie = goalieX > 0 and reflectDir.X < 0 or goalieX < 0 and reflectDir.X > 0
-                ricochetScore रुपये = reflectAwayFromGoalie and 5 or 0
+                ricochetScore = reflectAwayFromGoalie and 5 or 0
             end
             local score = goaliePenalty - angleScore * 2 - goalieYDist * 0.5 + math.random() - postPenalty - goalieBlockPenalty + ricochetScore
             if name == "CloseSpin" and isOffAngle then score = score + 5 elseif isClose then score = score + 3 end
@@ -360,14 +359,14 @@ local function CalculateTarget()
     local forwardDir = (HumanoidRootPart.CFrame.LookVector).Unit
     local playerAngle = math.deg(math.acos(goalDir:Dot(forwardDir)))
     local goalieHrp, goalieX, goalieY, _, isAggressive = GetEnemyGoalie()
-    **local** goaliePos = goalieHrp and goalieHrp.Position or nil
+    local goaliePos = goalieHrp and goalieHrp.Position or nil
     local worldTarget, spin, name, power, noSpinPos = GetTarget(dist, goalieX or 0, goalieY or 0, isAggressive or false, goaliePos, playerAngle)
     if not worldTarget then TargetPoint = nil; NoSpinPoint = nil; return end
 
     TargetPoint = worldTarget
     NoSpinPoint = noSpinPos
     CurrentSpin = spin
-    CurrentType = name  -- Теперь показывает реальный метод атаки
+    CurrentType = name
     CurrentPower = power
     ShootDir = (worldTarget - startPos).Unit
     ShootVel = ShootDir * (power * 1400)
@@ -378,87 +377,85 @@ local function CalculateTarget()
 end
 
 -- === MANUAL BUTTON (по центру экрана) ===
-local ManualButton = {}
-ManualButton.State = { Enabled = false, Dragging = false, DragStart = nil, StartPos = nil, TouchStartTime = 0, TouchThreshold = 0.2 }
+local ManualButtonGui = Instance.new("ScreenGui")
+ManualButtonGui.Name = "AutoShootManualButtonGui"
+ManualButtonGui.Parent = CoreGuiService
+ManualButtonGui.ResetOnSpawn = false
+ManualButtonGui.IgnoreGuiInset = false
 
-local function CreateManualButton()
-    local buttonGui = Instance.new("ScreenGui")
-    buttonGui.Name = "AutoShootManualButtonGui"
-    buttonGui.Parent = core.Services.CoreGuiService
-    buttonGui.ResetOnSpawn = false
-    buttonGui.IgnoreGuiInset = false
+local ManualButtonFrame = Instance.new("Frame")
+ManualButtonFrame.Size = UDim2.new(0, 60, 0, 60)
+ManualButtonFrame.Position = UDim2.new(0.5, -30, 0.5, -30)
+ManualButtonFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
+ManualButtonFrame.BackgroundTransparency = 0.3
+ManualButtonFrame.BorderSizePixel = 0
+ManualButtonFrame.Visible = false
+ManualButtonFrame.Parent = ManualButtonGui
 
-    local buttonFrame = Instance.new("Frame")
-    buttonFrame.Size = UDim2.new(0, 60, 0, 60)
-    buttonFrame.Position = UDim2.new(0.5, -30, 0.5, -30)  -- По центру экрана
-    buttonFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
-    buttonFrame.BackgroundTransparency = 0.3
-    buttonFrame.BorderSizePixel = 0
-    buttonFrame.Visible = ManualButton.State.Enabled
-    buttonFrame.Parent = buttonGui
-    ManualButton.Frame = buttonFrame
+Instance.new("UICorner", ManualButtonFrame).CornerRadius = UDim.new(0.5, 0)
 
-    Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0.5, 0)
+local ManualButtonIcon = Instance.new("ImageLabel")
+ManualButtonIcon.Size = UDim2.new(0, 36, 0, 36)
+ManualButtonIcon.Position = UDim2.new(0.5, -18, 0.5, -18)
+ManualButtonIcon.BackgroundTransparency = 1
+ManualButtonIcon.Image = "rbxassetid://73279554401260"
+ManualButtonIcon.Parent = ManualButtonFrame
 
-    local buttonIcon = Instance.new("ImageLabel")
-    buttonIcon.Size = UDim2.new(0, 36, 0, 36)
-    buttonIcon.Position = UDim2.new(0.5, -18, 0.5, -18)
-    buttonIcon.BackgroundTransparency = 1
-    buttonIcon.Image = "rbxassetid://73279554401260"
-    buttonIcon.Parent = buttonFrame
+local ManualButtonState = { Dragging = false, DragStart = nil, StartPos = nil, TouchStartTime = 0, TouchThreshold = 0.2 }
 
-    -- Драг
-    buttonFrame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            ManualButton.State.TouchStartTime = tick()
-            local mousePos = input.UserInputType == Enum.UserInputType.Touch and input.Position or UserInputService:GetMouseLocation()
-            if mousePos then
-                ManualButton.State.Dragging = true
-                ManualButton.State.DragStart = mousePos
-                ManualButton.State.StartPos = buttonFrame.Position
-            end
+ManualButtonFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        ManualButtonState.TouchStartTime = tick()
+        local mousePos = input.UserInputType == Enum.UserInputType.Touch and input.Position or UserInputService:GetMouseLocation()
+        if mousePos then
+            ManualButtonState.Dragging = true
+            ManualButtonState.DragStart = mousePos
+            ManualButtonState.StartPos = ManualButtonFrame.Position
         end
-    end)
+    end
+end)
 
-    UserInputService.InputChanged:Connect(function(input)
-        if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and ManualButton.State.Dragging then
-            local mousePos = input.UserInputType == Enum.UserInputType.Touch and input.Position or UserInputService:GetMouseLocation()
-            if mousePos then
-                local delta = mousePos - ManualButton.State.DragStart
-                buttonFrame.Position = UDim2.new(0, ManualButton.State.StartPos.X.Offset + delta.X, 0, ManualButton.State.StartPos.Y.Offset + delta.Y)
-            end
+UserInputService.InputChanged:Connect(function(input)
+    if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and ManualButtonState.Dragging then
+        local mousePos = input.UserInputType == Enum.UserInputType.Touch and input.Position or UserInputService:GetMouseLocation()
+        if mousePos then
+            local delta = mousePos - ManualButtonState.DragStart
+            ManualButtonFrame.Position = UDim2.new(0, ManualButtonState.StartPos.X.Offset + delta.X, 0, ManualButtonState.StartPos.Y.Offset + delta.Y)
         end
-    end)
+    end
+end)
 
-    buttonFrame.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            ManualButton.State.Dragging = false
-            if tick() - ManualButton.State.TouchStartTime < ManualButton.State.TouchThreshold then
-                -- Выстрел
-                local ball = Workspace:FindFirstChild("ball")
-                local hasBall = ball and ball:FindFirstChild("playerWeld") and ball.creator.Value == LocalPlayer
-                if hasBall and TargetPoint and CanShoot then
-                    pcall(CalculateTarget)
-                    if ShootDir then
-                        if AutoShootConfig.Legit and not IsAnimating then
-                            IsAnimating = true
-                            RShootAnim:Play()
-                            task.delay(AnimationHoldTime, function() IsAnimating = false end)
-                        end
-                        pcall(function()
-                            Shooter:FireServer(ShootDir, BallAttachment.CFrame, CurrentPower, ShootVel, false, false, CurrentSpin, nil, false)
-                        end)
-                        Gui.Status.Text = "MANUAL SHOT! [" .. CurrentType .. "]"
-                        Gui.Status.Color = Color3.fromRGB(0,255,0)
-                        LastShoot = tick()
-                        CanShoot = false
-                        task.delay(0.3, function() CanShoot = true end)
-                        notify("AutoShoot", "Manual Shoot", true)
+ManualButtonFrame.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        ManualButtonState.Dragging = false
+        if tick() - ManualButtonState.TouchStartTime < ManualButtonState.TouchThreshold then
+            local ball = Workspace:FindFirstChild("ball")
+            local hasBall = ball and ball:FindFirstChild("playerWeld") and ball.creator.Value == LocalPlayer
+            if hasBall and TargetPoint then
+                pcall(Camera, CalculateTarget)
+                if ShootDir then
+                    if AutoShootConfig.Legit and not IsAnimating then
+                        IsAnimating = true
+                        RShootAnim:Play()
+                        task.delay(AnimationHoldTime, function() IsAnimating = false end)
                     end
+                    pcall(function()
+                        Shooter:FireServer(ShootDir, BallAttachment.CFrame, CurrentPower, ShootVel, false, false, CurrentSpin, nil, false)
+                    end)
+                    Gui.Status.Text = "MANUAL SHOT! [" .. CurrentType .. "]"
+                    Gui.Status.Color = Color3.fromRGB(0,255,0)
+                    notify("AutoShoot", "Manual Shoot", true)
+                    LastShoot = tick()
+                    CanShoot = false
+                    task.delay(0.3, function() CanShoot = true end)
                 end
             end
         end
-    end)
+    end
+end)
+
+local function SetManualButtonVisible(visible)
+    ManualButtonFrame.Visible = visible and AutoShootStatus.ManualShot
 end
 
 -- === AUTO SHOOT ===
@@ -471,7 +468,7 @@ AutoShoot.Start = function()
     SetupGUI()
     InitializeCubes()
     UpdateModeText()
-    CreateManualButton()
+    SetManualButtonVisible(true)
 
     AutoShootStatus.Connection = RunService.Heartbeat:Connect(function()
         if not AutoShootConfig.Enabled then return end
@@ -482,7 +479,7 @@ AutoShoot.Start = function()
         local dist = GoalCFrame and (HumanoidRootPart.Position - GoalCFrame.Position).Magnitude or 999
 
         if hasBall and TargetPoint and dist <= AutoShootConfig.MaxDistance then
-            Gui.Status.Text = AutoShootStatus.ManualShot and "Ready (Press " .. GetKeyName(AutoShootStatus.Key) .. " or Button)" or "Aiming..."
+            Gui.Status.Text = AutoShootStatus.ManualShot and "Ready (Press " .. GetKeyName(AutoShootStatus.Key) .. ")" or "Aiming..."
             Gui.Status.Color = Color3.fromRGB(0,255,0)
         elseif hasBall then
             Gui.Status.Text = dist > AutoShootConfig.MaxDistance and "Too Far" or "No Target"
@@ -507,7 +504,6 @@ AutoShoot.Start = function()
         end
     end)
 
-    -- Ручной выстрел (кейбинд)
     UserInputService.InputBegan:Connect(function(inp, gp)
         if gp or not AutoShootConfig.Enabled or not AutoShootStatus.ManualShot or not CanShoot then return end
         if inp.KeyCode == AutoShootStatus.Key then
@@ -526,10 +522,10 @@ AutoShoot.Start = function()
                     end)
                     Gui.Status.Text = "MANUAL SHOT! [" .. CurrentType .. "]"
                     Gui.Status.Color = Color3.fromRGB(0,255,0)
+                    notify("AutoShoot", "Manual Shoot", true)
                     LastShoot = tick()
                     CanShoot = false
                     task.delay(0.3, function() CanShoot = true end)
-                    notify("AutoShoot", "Manual Shoot", true)
                 end
             end
         end
@@ -551,7 +547,7 @@ AutoShoot.Stop = function()
     AutoShootStatus.Running = false
     for _, v in pairs(Gui) do if v.Remove then v:Remove() end end
     for i = 1, 12 do if TargetCube[i] and TargetCube[i].Remove then TargetCube[i]:Remove() end; if GoalCube[i] and GoalCube[i].Remove then GoalCube[i]:Remove() end; if NoSpinCube[i] and NoSpinCube[i].Remove then NoSpinCube[i]:Remove() end end
-    if ManualButton.Frame then ManualButton.Frame:Destroy() end
+    ManualButtonFrame.Visible = false
     notify("AutoShoot", "Stopped", true)
 end
 
@@ -560,12 +556,6 @@ AutoShoot.SetDebugText = function(value)
     AutoShootConfig.DebugText = value
     ToggleDebugText(value)
     notify("AutoShoot", "Debug Text " .. (value and "Enabled" or "Disabled"), true)
-end
-
-AutoShoot.SetManualButton = function(value)
-    ManualButton.State.Enabled = value
-    if ManualButton.Frame then ManualButton.Frame.Visible = value end
-    notify("AutoShoot", "Manual Button " .. (value and "Enabled" or "Disabled"), true)
 end
 
 -- === AUTO PICKUP ===
@@ -598,11 +588,10 @@ local function SetupUI(UI)
         UI.Sections.AutoShoot:Header({ Name = "AutoShoot" })
         uiElements.AutoShootEnabled = UI.Sections.AutoShoot:Toggle({ Name = "Enabled", Default = AutoShootConfig.Enabled, Callback = function(v) AutoShootConfig.Enabled = v; if v then AutoShoot.Start() else AutoShoot.Stop() end end }, "AutoShootEnabled")
         uiElements.AutoShootLegit = UI.Sections.AutoShoot:Toggle({ Name = "Legit Animation", Default = AutoShootConfig.Legit, Callback = function(v) AutoShootConfig.Legit = v end }, "AutoShootLegit")
-        uiElements.AutoShootManual = UI.Sections.AutoShoot:Toggle({ Name = "Manual Shot", Default = AutoShootConfig.ManualShot, Callback = function(v) AutoShootStatus.ManualShot = v; AutoShootConfig.ManualShot = v; UpdateModeText() end }, "AutoShootManual")
+        uiElements.AutoShootManual = UI.Sections.AutoShoot:Toggle({ Name = "Manual Shot", Default = AutoShootConfig.ManualShot, Callback = function(v) AutoShootStatus.ManualShot = v; AutoShootConfig.ManualShot = v; UpdateModeText(); SetManualButtonVisible(v) end }, "AutoShootManual")
         uiElements.AutoShootKey = UI.Sections.AutoShoot:Keybind({ Name = "Shoot Key", Default = AutoShootConfig.ShootKey, Callback = function(v) AutoShootStatus.Key = v; AutoShootConfig.ShootKey = v; UpdateModeText() end }, "AutoShootKey")
         uiElements.AutoShootMaxDist = UI.Sections.AutoShoot:Slider({ Name = "Max Distance", Minimum = 50, Maximum = 300, Default = AutoShootConfig.MaxDistance, Precision = 1, Callback = function(v) AutoShootConfig.MaxDistance = v end }, "AutoShootMaxDist")
         uiElements.AutoShootDebugText = UI.Sections.AutoShoot:Toggle({ Name = "Debug Text", Default = AutoShootConfig.DebugText, Callback = function(v) AutoShoot.SetDebugText(v) end }, "AutoShootDebugText")
-        uiElements.AutoShootManualButton = UI.Sections.AutoShoot:Toggle({ Name = "Manual Button", Default = false, Callback = function(v) AutoShoot.SetManualButton(v) end }, "AutoShootManualButton")
     end
 
     if UI.Sections.AutoPickup then
@@ -631,7 +620,7 @@ local function SetupUI(UI)
         AutoShootStatus.DebugText = AutoShootConfig.DebugText
         UpdateModeText()
         ToggleDebugText(AutoShootStatus.DebugText)
-        AutoShoot.SetManualButton(uiElements.AutoShootManualButton:GetState())
+        SetManualButtonVisible(AutoShootStatus.ManualShot)
 
         if AutoShootConfig.Enabled then if not AutoShootStatus.Running then AutoShoot.Start() end else if AutoShootStatus.Running then AutoShoot.Stop() end end
         if AutoPickupConfig.Enabled then if not AutoPickupStatus.Running then AutoPickup.Start() end else if AutoPickupStatus.Running then AutoPickup.Stop() end end
