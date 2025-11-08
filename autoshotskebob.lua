@@ -72,7 +72,11 @@ local AutoShootStatus = {
     ManualButton = AutoShootConfig.ManualButton,
     ButtonScale = AutoShootConfig.ButtonScale,
     InputConnection = nil,
-    ButtonGui = nil
+    ButtonGui = nil,
+    TouchStartTime = 0,
+    Dragging = false,
+    DragStart = nil,
+    StartPos = nil
 }
 
 local AutoPickupStatus = {
@@ -431,10 +435,14 @@ local function SetupManualButton()
     buttonGui.IgnoreGuiInset = false
     buttonGui.Parent = game:GetService("CoreGui")
 
-    local buttonFrame = Instance.new("Frame")
     local size = 50 * AutoShootStatus.ButtonScale
+    local screenSize = Camera.ViewportSize
+    local initialX = screenSize.X / 2 - size / 2
+    local initialY = screenSize.Y / 2 - size / 2
+
+    local buttonFrame = Instance.new("Frame")
     buttonFrame.Size = UDim2.new(0, size, 0, size)
-    buttonFrame.Position = UDim2.new(0.5, -size/2, 0.5, -size/2)
+    buttonFrame.Position = UDim2.new(0, initialX, 0, initialY)
     buttonFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
     buttonFrame.BackgroundTransparency = 0.3
     buttonFrame.BorderSizePixel = 0
@@ -452,7 +460,7 @@ local function SetupManualButton()
 
     buttonFrame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            local touchStartTime = tick()
+            AutoShootStatus.TouchStartTime = tick()
             local mousePos = input.UserInputType == Enum.UserInputType.Touch and input.Position or UserInputService:GetMouseLocation()
             if mousePos then
                 AutoShootStatus.Dragging = true
@@ -475,7 +483,7 @@ local function SetupManualButton()
     buttonFrame.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             AutoShootStatus.Dragging = false
-            if tick() - touchStartTime < 0.2 then
+            if tick() - AutoShootStatus.TouchStartTime < 0.2 then
                 local ball = Workspace:FindFirstChild("ball")
                 local hasBall = ball and ball:FindFirstChild("playerWeld") and ball.creator.Value == LocalPlayer
                 if hasBall and TargetPoint then
