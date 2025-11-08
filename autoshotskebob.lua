@@ -75,8 +75,8 @@ local AutoShootStatus = {
     ButtonGui = nil,
     TouchStartTime = 0,
     Dragging = false,
-    DragStart = nil,
-    StartPos = nil
+    DragStart = Vector2.new(0, 0),
+    StartPos = UDim2.new(0, 0, 0, 0)
 }
 
 local AutoPickupStatus = {
@@ -461,29 +461,25 @@ local function SetupManualButton()
     buttonFrame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             AutoShootStatus.TouchStartTime = tick()
-            local mousePos = input.UserInputType == Enum.UserInputType.Touch and input.Position or UserInputService:GetMouseLocation()
-            if mousePos then
-                AutoShootStatus.Dragging = true
-                AutoShootStatus.DragStart = mousePos
-                AutoShootStatus.StartPos = buttonFrame.Position
-            end
+            local mousePos = input.UserInputType == Enum.UserInputType.Touch and Vector2.new(input.Position.X, input.Position.Y) or UserInputService:GetMouseLocation()
+            AutoShootStatus.Dragging = true
+            AutoShootStatus.DragStart = mousePos
+            AutoShootStatus.StartPos = buttonFrame.Position
         end
     end)
 
     UserInputService.InputChanged:Connect(function(input)
         if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and AutoShootStatus.Dragging then
-            local mousePos = input.UserInputType == Enum.UserInputType.Touch and input.Position or UserInputService:GetMouseLocation()
-            if mousePos then
-                local delta = mousePos - AutoShootStatus.DragStart
-                buttonFrame.Position = UDim2.new(0, AutoShootStatus.StartPos.X.Offset + delta.X, 0, AutoShootStatus.StartPos.Y.Offset + delta.Y)
-            end
+            local mousePos = input.UserInputType == Enum.UserInputType.Touch and Vector2.new(input.Position.X, input.Position.Y) or UserInputService:GetMouseLocation()
+            local delta = mousePos - AutoShootStatus.DragStart
+            buttonFrame.Position = UDim2.new(AutoShootStatus.StartPos.X.Scale, AutoShootStatus.StartPos.X.Offset + delta.X, AutoShootStatus.StartPos.Y.Scale, AutoShootStatus.StartPos.Y.Offset + delta.Y)
         end
     end)
 
     buttonFrame.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             AutoShootStatus.Dragging = false
-            if tick() - AutoShootStatus.TouchStartTime < 0.2 then
+            if AutoShootStatus.TouchStartTime > 0 and tick() - AutoShootStatus.TouchStartTime < 0.2 then
                 local ball = Workspace:FindFirstChild("ball")
                 local hasBall = ball and ball:FindFirstChild("playerWeld") and ball.creator.Value == LocalPlayer
                 if hasBall and TargetPoint then
@@ -508,6 +504,7 @@ local function SetupManualButton()
                     end
                 end
             end
+            AutoShootStatus.TouchStartTime = 0
         end
     end)
 
