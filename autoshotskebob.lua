@@ -659,20 +659,25 @@ local uiElements = {}
 local function SetupUI(UI)
     if UI.Sections.AutoShoot then
         UI.Sections.AutoShoot:Header({ Name = "AutoShoot" })
+        UI.Sections.AutoShoot:Divider()
         uiElements.AutoShootEnabled = UI.Sections.AutoShoot:Toggle({ Name = "Enabled", Default = AutoShootConfig.Enabled, Callback = function(v) AutoShootConfig.Enabled = v; if v then AutoShoot.Start() else AutoShoot.Stop() end end }, "AutoShootEnabled")
         uiElements.AutoShootLegit = UI.Sections.AutoShoot:Toggle({ Name = "Legit Animation", Default = AutoShootConfig.Legit, Callback = function(v) AutoShootConfig.Legit = v end }, "AutoShootLegit")
+        UI.Sections.AutoShoot:Divider()
         uiElements.AutoShootManual = UI.Sections.AutoShoot:Toggle({ Name = "Manual Shot", Default = AutoShootConfig.ManualShot, Callback = function(v) AutoShootStatus.ManualShot = v; AutoShootConfig.ManualShot = v; UpdateModeText() end }, "AutoShootManual")
         uiElements.AutoShootKey = UI.Sections.AutoShoot:Keybind({ Name = "Shoot Key", Default = AutoShootConfig.ShootKey, Callback = function(v) AutoShootStatus.Key = v; AutoShootConfig.ShootKey = v; UpdateModeText() end }, "AutoShootKey")
-        uiElements.AutoShootMaxDist = UI.Sections.AutoShoot:Slider({ Name = "Max Distance", Minimum = 50, Maximum = 300, Default = AutoShootConfig.MaxDistance, Precision = 1, Callback = function(v) AutoShootConfig.MaxDistance = v end }, "AutoShootMaxDist")
-        uiElements.AutoShootDebugText = UI.Sections.AutoShoot:Toggle({ Name = "Debug Text", Default = AutoShootConfig.DebugText, Callback = function(v) AutoShoot.SetDebugText(v) end }, "AutoShootDebugText")
         uiElements.AutoShootManualButton = UI.Sections.AutoShoot:Toggle({ Name = "Manual Button", Default = AutoShootConfig.ManualButton, Callback = ToggleManualButton }, "AutoShootManualButton")
         uiElements.AutoShootButtonScale = UI.Sections.AutoShoot:Slider({ Name = "Button Scale", Minimum = 0.5, Maximum = 2.0, Default = AutoShootConfig.ButtonScale, Precision = 2, Callback = SetButtonScale }, "AutoShootButtonScale")
+        UI.Sections.AutoShoot:Divider()
+        uiElements.AutoShootMaxDist = UI.Sections.AutoShoot:Slider({ Name = "Max Distance", Minimum = 50, Maximum = 300, Default = AutoShootConfig.MaxDistance, Precision = 1, Callback = function(v) AutoShootConfig.MaxDistance = v end }, "AutoShootMaxDist")
+        uiElements.AutoShootDebugText = UI.Sections.AutoShoot:Toggle({ Name = "Debug Text", Default = AutoShootConfig.DebugText, Callback = function(v) AutoShoot.SetDebugText(v) end }, "AutoShootDebugText")
     end
 
     if UI.Sections.AutoPickup then
         UI.Sections.AutoPickup:Header({ Name = "AutoPickup" })
+        UI.Sections.AutoPickup:Divider()
         uiElements.AutoPickupEnabled = UI.Sections.AutoPickup:Toggle({ Name = "Enabled", Default = AutoPickupConfig.Enabled, Callback = function(v) AutoPickupConfig.Enabled = v; if v then AutoPickup.Start() else AutoPickup.Stop() end end }, "AutoPickupEnabled")
         uiElements.AutoPickupDist = UI.Sections.AutoPickup:Slider({ Name = "Pickup Distance", Minimum = 50, Maximum = 300, Default = AutoPickupConfig.PickupDist, Precision = 1, Callback = function(v) AutoPickupConfig.PickupDist = v end }, "AutoPickupDist")
+        UI.Sections.AutoPickup:Divider()
         uiElements.AutoPickupSpoof = UI.Sections.AutoPickup:Slider({ Name = "Spoof Value", Minimum = 0.1, Maximum = 5.0, Default = AutoPickupConfig.SpoofValue, Precision = 2, Callback = function(v) AutoPickupConfig.SpoofValue = v end }, "AutoPickupSpoof")
     end
 
@@ -715,6 +720,10 @@ end
 if UI.Sections.Attacks then
     UI.Sections.Attacks:Header({ Name = "AutoShoot Attacks" })
     UI.Sections.Attacks:Divider()
+    UI.Sections.Attacks:Paragraph({
+         Header = "Information",
+         Body = "Min Dist - Minimum Distance for attack, Max Dist - Maximum Distance, X Mult - horizontal position multiplier (from center), Base Min/ Base Max - basic altitude range, DerivationMult - Prediction force of the ball deflection, Z Offset - target offset along the Z-axis (forward/backward from the goal line)"
+    })
     UI.Sections.Attacks:Header({ Name = "SideRicochet" })
     
     uiElements.SideRicochetEnabled = UI.Sections.Attacks:Toggle({ 
