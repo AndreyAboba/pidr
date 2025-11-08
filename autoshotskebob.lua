@@ -5,13 +5,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local Camera = Workspace.CurrentCamera
 local UserInputService = game:GetService("UserInputService")
-
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 local BallAttachment = Character:WaitForChild("ball")
 local Humanoid = Character:WaitForChild("Humanoid")
-
 local Shooter = ReplicatedStorage.Remotes:WaitForChild("ShootTheBaII")
 local PickupRemote
 for _, r in ReplicatedStorage.Remotes:GetChildren() do
@@ -19,14 +17,12 @@ for _, r in ReplicatedStorage.Remotes:GetChildren() do
         PickupRemote = r; break
     end
 end
-
 -- === АНИМАЦИЯ RShoot ===
 local Animations = ReplicatedStorage:WaitForChild("Animations")
 local RShootAnim = Humanoid:LoadAnimation(Animations:WaitForChild("RShoot"))
 RShootAnim.Priority = Enum.AnimationPriority.Action4
 local IsAnimating = false
 local AnimationHoldTime = 0.6
-
 -- === CONFIG ===
 local AutoShootConfig = {
     Enabled = false,
@@ -54,13 +50,11 @@ local AutoShootConfig = {
         FarSmartCandle = { Enabled = true, MinDist = 200, MaxDist = 300, Power = 60, XMult = 0.7, Spin = true, HeightMult = 1.8, BaseHeightRange = {Min = 40.0, Max = 80.0}, DerivationMult = 4.5, ZOffset = -10 }
     }
 }
-
 local AutoPickupConfig = {
     Enabled = true,
     PickupDist = 180,
     SpoofValue = 2.8
 }
-
 -- === STATUS ===
 local AutoShootStatus = {
     Running = false,
@@ -78,19 +72,16 @@ local AutoShootStatus = {
     DragStart = Vector2.new(0, 0),
     StartPos = UDim2.new(0, 0, 0, 0)
 }
-
 local AutoPickupStatus = {
     Running = false,
     Connection = nil
 }
-
 -- === GUI (Drawing) ===
 local Gui = {
     Status = Drawing.new("Text"), Dist = Drawing.new("Text"), Target = Drawing.new("Text"),
     Power = Drawing.new("Text"), Spin = Drawing.new("Text"), GK = Drawing.new("Text"),
     Debug = Drawing.new("Text"), Mode = Drawing.new("Text")
 }
-
 local function SetupGUI()
     local s = Camera.ViewportSize
     local cx, y = s.X / 2, s.Y * 0.48
@@ -104,13 +95,11 @@ local function SetupGUI()
     Gui.Debug.Text = "Debug: Initializing"
     Gui.Mode.Text = "Mode: Manual (E)"
 end
-
 local function ToggleDebugText(value)
     for _, v in pairs(Gui) do
         v.Visible = value
     end
 end
-
 -- === 3D CUBES ===
 local TargetCube, GoalCube, NoSpinCube = {}, {}, {}
 local function InitializeCubes()
@@ -132,7 +121,6 @@ local function InitializeCubes()
     SetupCube(GoalCube, Color3.fromRGB(255, 0, 0), 4)
     SetupCube(NoSpinCube, Color3.fromRGB(0, 255, 255), 5)
 end
-
 local function DrawOrientedCube(cube, cframe, size)
     if not cframe or not size then
         for _, line in ipairs(cube) do line.Visible = false end
@@ -162,7 +150,6 @@ local function DrawOrientedCube(cube, cframe, size)
         end
     end)
 end
-
 -- === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
 local function GetKeyName(key)
     if key == Enum.KeyCode.Unknown then return "None" end
@@ -170,11 +157,9 @@ local function GetKeyName(key)
     local pretty = { LeftMouse = "LMB", RightMouse = "RMB", MiddleMouse = "MMB", Space = "Space", LeftShift = "LShift", RightShift = "RShift", LeftControl = "LCtrl", RightControl = "RCtrl", LeftAlt = "LAlt", RightAlt = "RAlt" }
     return pretty[name] or name
 end
-
 local function UpdateModeText()
     Gui.Mode.Text = AutoShootStatus.ManualShot and string.format("Mode: Manual (%s)", GetKeyName(AutoShootStatus.Key)) or "Mode: Auto"
 end
-
 local function GetMyTeam()
     local stats = Workspace:FindFirstChild("PlayerStats")
     if not stats then return nil, nil end
@@ -182,7 +167,6 @@ local function GetMyTeam()
     elseif stats:FindFirstChild("Home") and stats.Home:FindFirstChild(LocalPlayer.Name) then return "Home", "AwayGoal" end
     return nil, nil
 end
-
 local GoalCFrame, GoalWidth, GoalHeight
 local function UpdateGoal()
     local myTeam, enemyGoalName = GetMyTeam()
@@ -202,7 +186,6 @@ local function UpdateGoal()
     GoalHeight = math.abs(crossbar.Position.Y - left.Position.Y)
     return GoalWidth, GoalHeight
 end
-
 local function GetEnemyGoalie()
     local myTeam = GetMyTeam()
     if not myTeam then Gui.GK.Text = "GK: None"; Gui.GK.Color = Color3.fromRGB(150,150,150); return nil, 0, 0, "None", false end
@@ -243,13 +226,11 @@ local function GetEnemyGoalie()
     Gui.GK.Color = Color3.fromRGB(255, 200, 0)
     return best.hrp, best.localX, best.localY, best.name, isAggressive
 end
-
 local function CalculateTrajectoryHeight(dist, power, attackName, isLowShot)
     local cfg = AutoShootConfig.Attacks[attackName] or {}
     local baseHeightRange = cfg.BaseHeightRange or {Min = 0.15, Max = 0.45}
     local heightMult = cfg.HeightMult or 1.0
     local baseHeight
-
     if isLowShot then baseHeight = 0.5
     elseif dist <= 80 then baseHeight = math.clamp(baseHeightRange.Min + (dist / 400), baseHeightRange.Min, baseHeightRange.Max)
     elseif dist <= 100 then baseHeight = math.clamp(baseHeightRange.Min + (dist / 200), baseHeightRange.Min, baseHeightRange.Max)
@@ -266,15 +247,12 @@ local function CalculateTrajectoryHeight(dist, power, attackName, isLowShot)
     height = math.clamp(height * heightMult, isLowShot and 0.5 or 2.0, AutoShootConfig.MaxHeight)
     return height, timeToTarget, gravityFall, baseHeight
 end
-
 local TargetPoint, ShootDir, ShootVel, CurrentSpin, CurrentPower, CurrentType, NoSpinPoint
 local LastShoot = 0
 local CanShoot = true
-
 local function GetTarget(dist, goalieX, goalieY, isAggressive, goaliePos, playerAngle)
     if not GoalCFrame or not GoalWidth then return nil, "None", "None", 0 end
     if dist > AutoShootConfig.MaxDistance then return nil, "None", "None", 0 end
-
     local startPos = HumanoidRootPart.Position
     local halfWidth = (GoalWidth / 2) - AutoShootConfig.Inset
     local halfHeight = (GoalHeight / 2) - AutoShootConfig.Inset
@@ -283,7 +261,6 @@ local function GetTarget(dist, goalieX, goalieY, isAggressive, goaliePos, player
     local isOffAngle = math.abs(playerAngle) > 30
     local isClose = dist < 30
     local isLowShot = (dist < 80 and math.random() < 0.3) or (isAggressive and goalieY > 3)
-
     local candidates = {}
     local ricochetPoints = {
         {x=halfWidth, y=halfHeight, normal=Vector3.new(-1, 0, 0), type="RightPost"},
@@ -292,7 +269,6 @@ local function GetTarget(dist, goalieX, goalieY, isAggressive, goaliePos, player
         {x=halfWidth, y=0.5, normal=Vector3.new(-1, 0, 0), type="RightLower"},
         {x=-halfWidth, y=0.5, normal=Vector3.new(1, 0, 0), type="LeftLower"}
     }
-
     for name, cfg in pairs(AutoShootConfig.Attacks) do
         if not cfg.Enabled or dist < cfg.MinDist or dist > math.min(cfg.MaxDist, AutoShootConfig.MaxDistance) then continue end
         local spin = cfg.Spin and (dist >= 110 or name == "CloseSpin") and (targetSide > 0 and "Right" or "Left") or "None"
@@ -350,7 +326,6 @@ local function GetTarget(dist, goalieX, goalieY, isAggressive, goaliePos, player
             table.insert(candidates, { pos=worldPos, noSpinPos=noSpinPos, spin=spin, power=power, name=name, score=score, targetType=targetType })
         end
     end
-
     if #candidates == 0 then
         local x = targetSide * halfWidth * 0.9
         local power = math.clamp(AutoShootConfig.MinPower + dist * AutoShootConfig.PowerPerStud, AutoShootConfig.MinPower, AutoShootConfig.MaxPower)
@@ -388,21 +363,17 @@ local function GetTarget(dist, goalieX, goalieY, isAggressive, goaliePos, player
             table.insert(candidates, { pos=worldPos, noSpinPos=noSpinPos, spin=spin, power=power, name="FALLBACK", score=score, targetType=targetType })
         end
     end
-
     table.sort(candidates, function(a, b) return a.score > b.score end)
     local selected = candidates[1]
     if not selected then return nil, "None", "None", 0 end
     return selected.pos, selected.spin, selected.name .. " (" .. selected.targetType .. ")", selected.power, selected.noSpinPos
 end
-
 local function CalculateTarget()
     local width = UpdateGoal()
     if not GoalCFrame or not width then TargetPoint = nil; NoSpinPoint = nil; Gui.Target.Text = "Target: --"; Gui.Power.Text = "Power: --"; Gui.Spin.Text = "Spin: --"; return end
-
     local dist = (HumanoidRootPart.Position - GoalCFrame.Position).Magnitude
     Gui.Dist.Text = string.format("Dist: %.1f (Max: %.1f)", dist, AutoShootConfig.MaxDistance)
     if dist > AutoShootConfig.MaxDistance then TargetPoint = nil; NoSpinPoint = nil; Gui.Target.Text = "Target: --"; Gui.Power.Text = "Power: --"; Gui.Spin.Text = "Spin: --"; return end
-
     local startPos = HumanoidRootPart.Position
     local goalDir = (GoalCFrame.Position - startPos).Unit
     local forwardDir = (HumanoidRootPart.CFrame.LookVector).Unit
@@ -411,7 +382,6 @@ local function CalculateTarget()
     local goaliePos = goalieHrp and goalieHrp.Position or nil
     local worldTarget, spin, name, power, noSpinPos = GetTarget(dist, goalieX or 0, goalieY or 0, isAggressive or false, goaliePos, playerAngle)
     if not worldTarget then TargetPoint = nil; NoSpinPoint = nil; Gui.Target.Text = "Target: --"; Gui.Power.Text = "Power: --"; Gui.Spin.Text = "Spin: --"; return end
-
     TargetPoint = worldTarget
     NoSpinPoint = noSpinPos
     CurrentSpin = spin
@@ -419,27 +389,22 @@ local function CalculateTarget()
     CurrentPower = power
     ShootDir = (worldTarget - startPos).Unit
     ShootVel = ShootDir * (power * 1400)
-
     Gui.Target.Text = "Target: " .. name
     Gui.Power.Text = string.format("Power: %.2f", power)
     Gui.Spin.Text = "Spin: " .. spin
 end
-
 -- === MANUAL BUTTON ===
 local function SetupManualButton()
     if AutoShootStatus.ButtonGui then AutoShootStatus.ButtonGui:Destroy() end
-
     local buttonGui = Instance.new("ScreenGui")
     buttonGui.Name = "ManualShootButtonGui"
     buttonGui.ResetOnSpawn = false
     buttonGui.IgnoreGuiInset = false
     buttonGui.Parent = game:GetService("CoreGui")
-
     local size = 50 * AutoShootStatus.ButtonScale
     local screenSize = Camera.ViewportSize
     local initialX = screenSize.X / 2 - size / 2
     local initialY = screenSize.Y / 2 - size / 2
-
     local buttonFrame = Instance.new("Frame")
     buttonFrame.Size = UDim2.new(0, size, 0, size)
     buttonFrame.Position = UDim2.new(0, initialX, 0, initialY)
@@ -448,16 +413,13 @@ local function SetupManualButton()
     buttonFrame.BorderSizePixel = 0
     buttonFrame.Visible = AutoShootStatus.ManualButton
     buttonFrame.Parent = buttonGui
-
     Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0.5, 0)
-
     local buttonIcon = Instance.new("ImageLabel")
     buttonIcon.Size = UDim2.new(0, size*0.6, 0, size*0.6)
     buttonIcon.Position = UDim2.new(0.5, -size*0.3, 0.5, -size*0.3)
     buttonIcon.BackgroundTransparency = 1
-    buttonIcon.Image = "rbxassetid://73279554401260"  -- Замените на подходящую иконку
+    buttonIcon.Image = "rbxassetid://73279554401260" -- Замените на подходящую иконку
     buttonIcon.Parent = buttonFrame
-
     buttonFrame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             AutoShootStatus.TouchStartTime = tick()
@@ -467,7 +429,6 @@ local function SetupManualButton()
             AutoShootStatus.StartPos = buttonFrame.Position
         end
     end)
-
     UserInputService.InputChanged:Connect(function(input)
         if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and AutoShootStatus.Dragging then
             local mousePos = input.UserInputType == Enum.UserInputType.Touch and Vector2.new(input.Position.X, input.Position.Y) or UserInputService:GetMouseLocation()
@@ -475,7 +436,6 @@ local function SetupManualButton()
             buttonFrame.Position = UDim2.new(AutoShootStatus.StartPos.X.Scale, AutoShootStatus.StartPos.X.Offset + delta.X, AutoShootStatus.StartPos.Y.Scale, AutoShootStatus.StartPos.Y.Offset + delta.Y)
         end
     end)
-
     buttonFrame.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             AutoShootStatus.Dragging = false
@@ -507,10 +467,8 @@ local function SetupManualButton()
             AutoShootStatus.TouchStartTime = 0
         end
     end)
-
     AutoShootStatus.ButtonGui = buttonGui
 end
-
 local function ToggleManualButton(value)
     AutoShootStatus.ManualButton = value
     AutoShootConfig.ManualButton = value
@@ -520,33 +478,26 @@ local function ToggleManualButton(value)
         if AutoShootStatus.ButtonGui then AutoShootStatus.ButtonGui:Destroy(); AutoShootStatus.ButtonGui = nil end
     end
 end
-
 local function SetButtonScale(value)
     AutoShootStatus.ButtonScale = value
     AutoShootConfig.ButtonScale = value
     if AutoShootStatus.ManualButton then SetupManualButton() end
 end
-
 -- === AUTO SHOOT ===
 local AutoShoot = {}
-
 AutoShoot.Start = function()
     if AutoShootStatus.Running then return end
     AutoShootStatus.Running = true
-
-    SetupGUI()
-    InitializeCubes()
+    SetupGUI()               -- Пересоздаём GUI каждый раз при старте
+    InitializeCubes()        -- Пересоздаём кубы каждый раз при старте
     UpdateModeText()
     if AutoShootStatus.ManualButton then SetupManualButton() end
-
     AutoShootStatus.Connection = RunService.Heartbeat:Connect(function()
         if not AutoShootConfig.Enabled then return end
         pcall(CalculateTarget)
-
         local ball = Workspace:FindFirstChild("ball")
         local hasBall = ball and ball:FindFirstChild("playerWeld") and ball.creator.Value == LocalPlayer
         local dist = GoalCFrame and (HumanoidRootPart.Position - GoalCFrame.Position).Magnitude or 999
-
         if hasBall and TargetPoint and dist <= AutoShootConfig.MaxDistance then
             Gui.Status.Text = AutoShootStatus.ManualShot and "Ready (Press " .. GetKeyName(AutoShootStatus.Key) .. ")" or "Aiming..."
             Gui.Status.Color = Color3.fromRGB(0,255,0)
@@ -557,7 +508,6 @@ AutoShoot.Start = function()
             Gui.Status.Text = "No Ball"
             Gui.Status.Color = Color3.fromRGB(255,165,0)
         end
-
         if hasBall and TargetPoint and dist <= AutoShootConfig.MaxDistance and not AutoShootStatus.ManualShot and tick() - LastShoot >= 0.3 then
             if AutoShootConfig.Legit and not IsAnimating then
                 IsAnimating = true
@@ -572,7 +522,6 @@ AutoShoot.Start = function()
             LastShoot = tick()
         end
     end)
-
     -- Ручной выстрел по клавише
     AutoShootStatus.InputConnection = UserInputService.InputBegan:Connect(function(inp, gp)
         if gp or not AutoShootConfig.Enabled or not AutoShootStatus.ManualShot or not CanShoot then return end
@@ -602,17 +551,16 @@ AutoShoot.Start = function()
             end
         end
     end)
-
     AutoShootStatus.RenderConnection = RunService.RenderStepped:Connect(function()
         local width = UpdateGoal()
         if GoalCFrame and width then DrawOrientedCube(GoalCube, GoalCFrame, Vector3.new(width, GoalHeight, 2)) else for _, l in ipairs(GoalCube) do l.Visible = false end end
         if TargetPoint then DrawOrientedCube(TargetCube, CFrame.new(TargetPoint), Vector3.new(4,4,4)) else for _, l in ipairs(TargetCube) do l.Visible = false end end
         if NoSpinPoint then DrawOrientedCube(NoSpinCube, CFrame.new(NoSpinPoint), Vector3.new(3,3,3)) else for _, l in ipairs(NoSpinCube) do l.Visible = false end end
     end)
-
+    -- При старте явно включаем видимость в зависимости от текущего состояния DebugText
+    ToggleDebugText(AutoShootStatus.DebugText)
     notify("AutoShoot", "Started", true)
 end
-
 AutoShoot.Stop = function()
     if AutoShootStatus.Connection then AutoShootStatus.Connection:Disconnect(); AutoShootStatus.Connection = nil end
     if AutoShootStatus.RenderConnection then AutoShootStatus.RenderConnection:Disconnect(); AutoShootStatus.RenderConnection = nil end
@@ -623,17 +571,14 @@ AutoShoot.Stop = function()
     if AutoShootStatus.ButtonGui then AutoShootStatus.ButtonGui:Destroy(); AutoShootStatus.ButtonGui = nil end
     notify("AutoShoot", "Stopped", true)
 end
-
 AutoShoot.SetDebugText = function(value)
     AutoShootStatus.DebugText = value
     AutoShootConfig.DebugText = value
     ToggleDebugText(value)
     notify("AutoShoot", "Debug Text " .. (value and "Enabled" or "Disabled"), true)
 end
-
 -- === AUTO PICKUP ===
 local AutoPickup = {}
-
 AutoPickup.Start = function()
     if AutoPickupStatus.Running then return end
     AutoPickupStatus.Running = true
@@ -647,13 +592,12 @@ AutoPickup.Start = function()
     end)
     notify("AutoPickup", "Started", true)
 end
-
 AutoPickup.Stop = function()
     if AutoPickupStatus.Connection then AutoPickupStatus.Connection:Disconnect(); AutoPickupStatus.Connection = nil end
     AutoPickupStatus.Running = false
     notify("AutoPickup", "Stopped", true)
 end
-
+-- === UI ===
 -- === UI ===
 local uiElements = {}
 local function SetupUI(UI)
@@ -676,9 +620,12 @@ local function SetupUI(UI)
         UI.Sections.AutoPickup:Header({ Name = "AutoPickup" })
         UI.Sections.AutoPickup:Divider()
         uiElements.AutoPickupEnabled = UI.Sections.AutoPickup:Toggle({ Name = "Enabled", Default = AutoPickupConfig.Enabled, Callback = function(v) AutoPickupConfig.Enabled = v; if v then AutoPickup.Start() else AutoPickup.Stop() end end }, "AutoPickupEnabled")
-        uiElements.AutoPickupDist = UI.Sections.AutoPickup:Slider({ Name = "Pickup Distance", Minimum = 50, Maximum = 300, Default = AutoPickupConfig.PickupDist, Precision = 1, Callback = function(v) AutoPickupConfig.PickupDist = v end }, "AutoPickupDist")
+        uiElements.AutoPickupDist = UI.Sections.AutoPickup:Slider({ Name = "Pickup Distance", Minimum = 10, Maximum = 100, Default = AutoPickupConfig.PickupDist, Precision = 1, Callback = function(v) AutoPickupConfig.PickupDist = v end }, "AutoPickupDist")
         UI.Sections.AutoPickup:Divider()
         uiElements.AutoPickupSpoof = UI.Sections.AutoPickup:Slider({ Name = "Spoof Value", Minimum = 0.1, Maximum = 5.0, Default = AutoPickupConfig.SpoofValue, Precision = 2, Callback = function(v) AutoPickupConfig.SpoofValue = v end }, "AutoPickupSpoof")
+        UI.Sections.AutoPickup:SubLabel({
+            Text = '[💠] The distance from you to the ball that is sent to the server'
+        })
     end
 
 
@@ -1182,14 +1129,10 @@ if UI.Sections.Attacks then
     }, "FarSmartCandleZOffset")
 end
 
-    
 
-
-
-
-    local syncSection = UI.Tabs.Config:Section({ Name = "AutoShoot & AutoPickup Sync", Side = "Right" })
-    syncSection:Header({ Name = "AutoShoot/AutoPickup" })
-    syncSection:Button({ Name = "Sync Config", Callback = function()
+local syncSection = UI.Tabs.Config:Section({ Name = "AutoShoot & AutoPickup Sync", Side = "Right" })
+syncSection:Header({ Name = "AutoShoot/AutoPickup" })
+syncSection:Button({ Name = "Sync Config", Callback = function()
         AutoShootConfig.Enabled = uiElements.AutoShootEnabled:GetState()
         AutoShootConfig.Legit = uiElements.AutoShootLegit:GetState()
         AutoShootConfig.ManualShot = uiElements.AutoShootManual:GetState()
@@ -1318,29 +1261,23 @@ end
         AutoShootConfig.Attacks.FarSmartCandle.DerivationMult = uiElements.FarSmartCandleDerivationMult:GetValue()
         AutoShootConfig.Attacks.FarSmartCandle.ZOffset = uiElements.FarSmartCandleZOffset:GetValue()
 
-        UpdateModeText()
-        ToggleDebugText(AutoShootStatus.DebugText)
-        ToggleManualButton(AutoShootStatus.ManualButton)
-
-        if AutoShootConfig.Enabled then if not AutoShootStatus.Running then AutoShoot.Start() end else if AutoShootStatus.Running then AutoShoot.Stop() end end
-        if AutoPickupConfig.Enabled then if not AutoPickupStatus.Running then AutoPickup.Start() end else if AutoPickupStatus.Running then AutoPickup.Stop() end end
-
-        notify("Syllinse", "Config synchronized!", true)
-    end })
+    UpdateModeText()
+    ToggleDebugText(AutoShootStatus.DebugText)  -- Явно обновляем видимость после синхронизации
+    ToggleManualButton(AutoShootStatus.ManualButton)
+    if AutoShootConfig.Enabled then if not AutoShootStatus.Running then AutoShoot.Start() end else if AutoShootStatus.Running then AutoShoot.Stop() end end
+    if AutoPickupConfig.Enabled then if not AutoPickupStatus.Running then AutoPickup.Start() end else if AutoPickupStatus.Running then AutoPickup.Stop() end end
+    notify("Syllinse", "Config synchronized!", true)
+end })
 end
-
 -- === МОДУЛЬ ===
 local AutoShootModule = {}
-
 function AutoShootModule.Init(UI, coreParam, notifyFunc)
     core = coreParam
     Services = core.Services
     PlayerData = core.PlayerData
     notify = notifyFunc
     LocalPlayerObj = PlayerData.LocalPlayer
-
     SetupUI(UI)
-
     LocalPlayerObj.CharacterAdded:Connect(function(newChar)
         task.wait(1)
         Character = newChar
@@ -1354,10 +1291,8 @@ function AutoShootModule.Init(UI, coreParam, notifyFunc)
         if AutoPickupConfig.Enabled then AutoPickup.Start() end
     end)
 end
-
 function AutoShootModule:Destroy()
     AutoShoot.Stop()
     AutoPickup.Stop()
 end
-
 return AutoShootModule
