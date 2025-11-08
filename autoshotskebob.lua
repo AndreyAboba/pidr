@@ -690,7 +690,10 @@ local function SetupUI(UI)
         Name = "Goal Inset", Minimum = 0, Maximum = 5, Default = AutoShootConfig.Inset, Precision = 1, 
         Callback = function(v) AutoShootConfig.Inset = v end 
     }, "AdvancedInset")
-
+    UI.Sections.AdvancedPrediction:SubLabel({
+        Text ='[💠] Indentation from the edges of the gate (in studs) / reduces the hitting area so that the ball does not hit the bars/crossbar.'
+    })
+    UI.Sections.AdvancedPrediction:Divider()
     uiElements.AdvancedGravity = UI.Sections.AdvancedPrediction:Slider({ 
         Name = "Gravity", Minimum = 50, Maximum = 200, Default = AutoShootConfig.Gravity, Precision = 1, 
         Callback = function(v) AutoShootConfig.Gravity = v end 
@@ -715,6 +718,9 @@ local function SetupUI(UI)
         Name = "Max Height", Minimum = 50, Maximum = 200, Default = AutoShootConfig.MaxHeight, Precision = 1, 
         Callback = function(v) AutoShootConfig.MaxHeight = v end 
     }, "AdvancedMaxHeight")
+    UI.Sections.AdvancedPrediction:SubLabel({
+        Text ='[💠] The maximum height of the ball flight (in studs)'
+    })
 end
 
 if UI.Sections.Attacks then
@@ -724,6 +730,7 @@ if UI.Sections.Attacks then
          Header = "Information",
          Body = "Min Dist - Minimum Distance for attack, Max Dist - Maximum Distance, X Mult - horizontal position multiplier (from center), Base Min/ Base Max - basic altitude range, DerivationMult - Prediction force of the ball deflection, Z Offset - target offset along the Z-axis (forward/backward from the goal line)"
     })
+    UI.Sections.Attacks:Divider()
     UI.Sections.Attacks:Header({ Name = "SideRicochet" })
     
     uiElements.SideRicochetEnabled = UI.Sections.Attacks:Toggle({ 
