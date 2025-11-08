@@ -679,8 +679,8 @@ local function SetupUI(UI)
 
 
     if UI.Sections.AdvancedPrediction then
-        UI.Sections.AdvancedPrediction:Header({ Name = "Advanced Prediction" })
-    
+        UI.Sections.AdvancedPrediction:Header({ Name = "Advanced Prediction (AutoShoot)" })
+    UI.Sections.AdvancedPrediction:Divider()
     uiElements.AdvancedInset = UI.Sections.AdvancedPrediction:Slider({ 
         Name = "Goal Inset", Minimum = 0, Maximum = 5, Default = AutoShootConfig.Inset, Precision = 1, 
         Callback = function(v) AutoShootConfig.Inset = v end 
@@ -690,7 +690,7 @@ local function SetupUI(UI)
         Name = "Gravity", Minimum = 50, Maximum = 200, Default = AutoShootConfig.Gravity, Precision = 1, 
         Callback = function(v) AutoShootConfig.Gravity = v end 
     }, "AdvancedGravity")
-
+    UI.Sections.AdvancedPrediction:Divider()
     uiElements.AdvancedMinPower = UI.Sections.AdvancedPrediction:Slider({ 
         Name = "Min Power", Minimum = 1.0, Maximum = 10.0, Default = AutoShootConfig.MinPower, Precision = 2, 
         Callback = function(v) AutoShootConfig.MinPower = v end 
@@ -705,7 +705,7 @@ local function SetupUI(UI)
         Name = "Power Per Stud", Minimum = 0.001, Maximum = 0.1, Default = AutoShootConfig.PowerPerStud, Precision = 3, 
         Callback = function(v) AutoShootConfig.PowerPerStud = v end 
     }, "AdvancedPowerPerStud")
-
+    UI.Sections.AdvancedPrediction:Divider()
     uiElements.AdvancedMaxHeight = UI.Sections.AdvancedPrediction:Slider({ 
         Name = "Max Height", Minimum = 50, Maximum = 200, Default = AutoShootConfig.MaxHeight, Precision = 1, 
         Callback = function(v) AutoShootConfig.MaxHeight = v end 
@@ -713,6 +713,8 @@ local function SetupUI(UI)
 end
 
 if UI.Sections.Attacks then
+    UI.Sections.Attacks:Header({ Name = "AutoShoot Attacks" })
+    UI.Sections.Attacks:Divider()
     UI.Sections.Attacks:Header({ Name = "SideRicochet" })
     
     uiElements.SideRicochetEnabled = UI.Sections.Attacks:Toggle({ 
@@ -766,7 +768,7 @@ if UI.Sections.Attacks then
         Name = "Z Offset", Minimum = -20.0, Maximum = 20.0, Default = AutoShootConfig.Attacks.SideRicochet.ZOffset, Precision = 2, 
         Callback = function(v) AutoShootConfig.Attacks.SideRicochet.ZOffset = v end 
     }, "SideRicochetZOffset")
-    
+    UI.Sections.Attacks:Divider()
     UI.Sections.Attacks:Header({ Name = "CloseSpin" })
     
     uiElements.CloseSpinEnabled = UI.Sections.Attacks:Toggle({ 
@@ -823,7 +825,7 @@ if UI.Sections.Attacks then
         Name = "Z Offset", Minimum = -20.0, Maximum = 20.0, Default = AutoShootConfig.Attacks.CloseSpin.ZOffset, Precision = 2, 
         Callback = function(v) AutoShootConfig.Attacks.CloseSpin.ZOffset = v end 
     }, "CloseSpinZOffset")
-    
+    UI.Sections.Attacks:Divider()
     UI.Sections.Attacks:Header({ Name = "SmartCorner" })
     
     uiElements.SmartCornerEnabled = UI.Sections.Attacks:Toggle({ 
@@ -877,7 +879,7 @@ if UI.Sections.Attacks then
         Name = "Z Offset", Minimum = -20.0, Maximum = 20.0, Default = AutoShootConfig.Attacks.SmartCorner.ZOffset, Precision = 2, 
         Callback = function(v) AutoShootConfig.Attacks.SmartCorner.ZOffset = v end 
     }, "SmartCornerZOffset")
-    
+    UI.Sections.Attacks:Divider()
     UI.Sections.Attacks:Header({ Name = "SmartCandle" })
     
     uiElements.SmartCandleEnabled = UI.Sections.Attacks:Toggle({ 
@@ -934,7 +936,7 @@ if UI.Sections.Attacks then
         Name = "Z Offset", Minimum = -20.0, Maximum = 20.0, Default = AutoShootConfig.Attacks.SmartCandle.ZOffset, Precision = 2, 
         Callback = function(v) AutoShootConfig.Attacks.SmartCandle.ZOffset = v end 
     }, "SmartCandleZOffset")
-    
+    UI.Sections.Attacks:Divider()
     UI.Sections.Attacks:Header({ Name = "SmartRicochet" })
     
     uiElements.SmartRicochetEnabled = UI.Sections.Attacks:Toggle({ 
@@ -991,7 +993,7 @@ if UI.Sections.Attacks then
         Name = "Z Offset", Minimum = -20.0, Maximum = 20.0, Default = AutoShootConfig.Attacks.SmartRicochet.ZOffset, Precision = 2, 
         Callback = function(v) AutoShootConfig.Attacks.SmartRicochet.ZOffset = v end 
     }, "SmartRicochetZOffset")
-    
+    UI.Sections.Attacks:Divider()
     UI.Sections.Attacks:Header({ Name = "SmartSpin" })
     
     uiElements.SmartSpinEnabled = UI.Sections.Attacks:Toggle({ 
@@ -1048,7 +1050,7 @@ if UI.Sections.Attacks then
         Name = "Z Offset", Minimum = -20.0, Maximum = 20.0, Default = AutoShootConfig.Attacks.SmartSpin.ZOffset, Precision = 2, 
         Callback = function(v) AutoShootConfig.Attacks.SmartSpin.ZOffset = v end 
     }, "SmartSpinZOffset")
-    
+    UI.Sections.Attacks:Divider()
     UI.Sections.Attacks:Header({ Name = "SmartCandleMid" })
     
     uiElements.SmartCandleMidEnabled = UI.Sections.Attacks:Toggle({ 
@@ -1105,7 +1107,7 @@ if UI.Sections.Attacks then
         Name = "Z Offset", Minimum = -20.0, Maximum = 20.0, Default = AutoShootConfig.Attacks.SmartCandleMid.ZOffset, Precision = 2, 
         Callback = function(v) AutoShootConfig.Attacks.SmartCandleMid.ZOffset = v end 
     }, "SmartCandleMidZOffset")
-    
+    UI.Sections.Attacks:Divider()
     UI.Sections.Attacks:Header({ Name = "FarSmartCandle" })
     
     uiElements.FarSmartCandleEnabled = UI.Sections.Attacks:Toggle({ 
@@ -1170,7 +1172,7 @@ end
 
 
     local syncSection = UI.Tabs.Config:Section({ Name = "AutoShoot & AutoPickup Sync", Side = "Right" })
-    syncSection:Header({ Name = "Sync" })
+    syncSection:Header({ Name = "AutoShoot/AutoPickup" })
     syncSection:Button({ Name = "Sync Config", Callback = function()
         AutoShootConfig.Enabled = uiElements.AutoShootEnabled:GetState()
         AutoShootConfig.Legit = uiElements.AutoShootLegit:GetState()
