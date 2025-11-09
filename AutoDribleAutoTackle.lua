@@ -455,12 +455,10 @@ local function EagleEye(ball, owner)
     local mode = AutoTackleConfig.EagleEyeExceptions
     local shouldTackleFromMode = false
     local modeReason = ""
-    local waitTime = 0
+    local dribbleWaitTime = 0
 
-    if mode == "None" then
-        shouldTackleFromMode = true
-        modeReason = "None"
-    elseif mode == "OnlyDribble" then
+    -- Логика для dribble conditions
+    if mode == "OnlyDribble" or mode == "Dribble" then
         if isDribbling then
             shouldTackleFromMode = true
             modeReason = "Dribbling"
@@ -481,68 +479,56 @@ local function EagleEye(ball, owner)
                         modeReason = "DelayEnd"
                     else
                         shouldTackleFromMode = false
-                        waitTime = AutoTackleConfig.DribbleDelayTime - timeSinceEnd
+                        dribbleWaitTime = AutoTackleConfig.DribbleDelayTime - timeSinceEnd
                         modeReason = "DelayWait"
                     end
                 end
             end
         end
-    elseif mode == "Dribble" then
+    elseif mode == "None" then
         shouldTackleFromMode = true
-        modeReason = "Dribble"
-        if inCooldown then
-            if state.DelayTriggered then
-                -- ok
-            else
-                if AutoTackleConfig.DribbleDelay == "Smart" then
-                    -- Smart: ждет конца анимации
-                    state.DelayTriggered = true
-                else -- Delay
-                    if timeSinceEnd >= AutoTackleConfig.DribbleDelayTime then
-                        state.DelayTriggered = true
-                    else
-                        shouldTackleFromMode = false
-                        waitTime = AutoTackleConfig.DribbleDelayTime - timeSinceEnd
-                        modeReason = "DribbleDelay"
-                    end
-                end
-            end
-        end
+        modeReason = "None"
     end
 
     local shouldTackle = powerShooting or shouldTackleFromMode
-    local reason = powerShooting and "PowerShooting" or modeReason
 
-    -- Применение EagleEye delay только если не PowerShooting и режим требует (Dribble или None)
-    local applyEagleDelay = shouldTackle and not powerShooting and (mode == "Dribble" or mode == "None")
-    if applyEagleDelay then
+    -- Применение EagleEye delay только для Dribble mode (base wait 0.1-1)
+    local applyEagleDelay = false
+    local eagleWaitTime = 0
+    if mode == "Dribble" and not powerShooting and shouldTackleFromMode then
+        applyEagleDelay = true
         if not EagleEyeWaitStart then
-            waitTime = AutoTackleConfig.EagleEyeMinDelay + math.random() * (AutoTackleConfig.EagleEyeMaxDelay - AutoTackleConfig.EagleEyeMinDelay)
+            eagleWaitTime = AutoTackleConfig.EagleEyeMinDelay + math.random() * (AutoTackleConfig.EagleEyeMaxDelay - AutoTackleConfig.EagleEyeMinDelay)
             EagleEyeWaitStart = os.clock()
-            EagleEyeWaitTime = waitTime
-            reason = "EagleEye"
+            EagleEyeWaitTime = eagleWaitTime
+            modeReason = "EagleEye"
         else
             local elapsed = os.clock() - EagleEyeWaitStart
             if elapsed >= EagleEyeWaitTime then
                 shouldTackle = true
             else
                 shouldTackle = false
-                waitTime = EagleEyeWaitTime - elapsed
+                eagleWaitTime = EagleEyeWaitTime - elapsed
             end
         end
     else
         EagleEyeWaitStart = nil  -- сброс если не применяется
     end
 
-    -- Учет waitTime от DribbleDelay (приоритет выше EagleEye)
-    if waitTime > 0 and not powerShooting then
+    -- Общий waitTime: приоритет dribbleWaitTime, затем eagle
+    local totalWaitTime = math.max(dribbleWaitTime, eagleWaitTime)
+
+    -- Если любой wait >0 и не PowerShooting, не tackle
+    if totalWaitTime > 0 and not powerShooting then
         shouldTackle = false
     end
 
+    local reason = powerShooting and "PowerShooting" or modeReason
+
     if AutoTackleStatus.DebugText then
-        if waitTime > 0 then
+        if totalWaitTime > 0 then
             TackleGui.EagleEyeLabel.Text = "EagleEye: " .. reason
-            TackleGui.WaitLabel.Text = string.format("Wait: %.2f", waitTime)
+            TackleGui.WaitLabel.Text = string.format("Wait: %.2f", totalWaitTime)
         else
             TackleGui.EagleEyeLabel.Text = "EagleEye: Tackling (" .. reason .. ")"
             TackleGui.WaitLabel.Text = "Wait: 0.00"
@@ -555,7 +541,7 @@ local function EagleEye(ball, owner)
         local canTackle, _, _, _ = CanTackle()
         if canTackle then
             PerformTackle(ball, owner)
-            if not powerShooting and reason ~= "Cooldown" then
+            if not powerShooting then
                 EagleEyeWaitStart = nil
             end
         end
@@ -664,6 +650,7 @@ AutoDribble.Stop = function()
     
     for _, v in pairs(DribbleGui) do if v.Remove then v:Remove() end end
 end
+
 
 -- === UI ИНТЕГРАЦИЯ ===
 local uiElements = {}
