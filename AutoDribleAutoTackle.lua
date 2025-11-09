@@ -1,8 +1,8 @@
 --[[
     AutoTackle & AutoDribble Module
-    Adapted for UI Library
-    Removed "Always" from RotationMethod
-    Separate Debug Drawing for Tackle/Dribble, positioned right of AutoShoot
+    Полностью исправленный, адаптированный под UI
+    Убрано "Always" из RotationMethod
+    Раздельный Debug Drawing (правее AutoShoot)
 --]]
 
 local Players = game:GetService("Players")
@@ -90,7 +90,7 @@ local CanDribbleNow = false
 local EagleEyeWaitStart = nil
 local EagleEyeWaitTime = 0
 
--- GUI (Separate for Tackle/Dribble, positioned right of AutoShoot)
+-- GUI (Раздельный для Tackle/Dribble, правее AutoShoot)
 local TackleGui = nil
 local DribbleGui = nil
 local TargetRingLines = {}
@@ -105,7 +105,7 @@ local function SetupTackleGui()
         EagleEyeLabel = Drawing.new("Text")
     }
     local s = Camera.ViewportSize
-    local centerX = s.X / 2 + 250  -- Right of AutoShoot (center + 250)
+    local centerX = s.X / 2 + 250  -- Правее центра (смещение +250)
     local y = s.Y * 0.6
     local offsetY = y
 
@@ -135,8 +135,8 @@ local function SetupDribbleGui()
         AutoDribbleLabel = Drawing.new("Text")
     }
     local s = Camera.ViewportSize
-    local centerX = s.X / 2 + 250  -- Same as Tackle
-    local y = s.Y * 0.4  -- Above Tackle
+    local centerX = s.X / 2 + 250  -- То же смещение
+    local y = s.Y * 0.4  -- Выше Tackle
     local offsetY = y
 
     for _, label in ipairs({DribbleGui.StatusLabel, DribbleGui.TargetLabel, DribbleGui.TacklingLabel, DribbleGui.AutoDribbleLabel}) do
@@ -466,14 +466,14 @@ local function EagleEye(ball, owner)
 
     elseif mode == "OnlyDribble" then
         if inCooldown then
-            if state.DelayTriggered then
+            if state.delayTriggered then
                 shouldTackle = true
                 reason = "Cooldown"
             else
                 if AutoTackleConfig.DribbleDelay == "Smart" then
                     if not isDribbling then
                         if timeSinceEnd >= AutoTackleConfig.DribbleDelayTime then
-                            state.DelayTriggered = true
+                            state.delayTriggered = true
                             shouldTackle = true
                             reason = "Smart+Delay"
                         else
@@ -486,7 +486,7 @@ local function EagleEye(ball, owner)
                     end
                 else
                     if timeSinceEnd >= AutoTackleConfig.DribbleDelayTime then
-                        state.DelayTriggered = true
+                        state.delayTriggered = true
                         shouldTackle = true
                         reason = "DelayEnd"
                     else
@@ -501,15 +501,16 @@ local function EagleEye(ball, owner)
         if isDribbling then
             shouldTackle = true
             reason = "Dribbling"
-        elseif inCooldown then
-            if state.DelayTriggered then
+        end
+        if inCooldown then
+            if state.delayTriggered then
                 shouldTackle = true
                 reason = "Cooldown"
             else
                 if AutoTackleConfig.DribbleDelay == "Smart" then
                     if not isDribbling then
                         if timeSinceEnd >= AutoTackleConfig.DribbleDelayTime then
-                            state.DelayTriggered = true
+                            state.delayTriggered = true
                             shouldTackle = true
                             reason = "Smart+Delay"
                         else
@@ -522,7 +523,7 @@ local function EagleEye(ball, owner)
                     end
                 else
                     if timeSinceEnd >= AutoTackleConfig.DribbleDelayTime then
-                        state.DelayTriggered = true
+                        state.delayTriggered = true
                         shouldTackle = true
                         reason = "DelayEnd"
                     else
@@ -537,15 +538,16 @@ local function EagleEye(ball, owner)
         if isDribbling or isTacklingNow then
             shouldTackle = true
             reason = isDribbling and "Dribbling" or "Tackling"
-        elseif inCooldown then
-            if state.DelayTriggered then
+        end
+        if inCooldown then
+            if state.delayTriggered then
                 shouldTackle = true
                 reason = "Cooldown"
             else
                 if AutoTackleConfig.DribbleDelay == "Smart" then
                     if not isDribbling then
                         if timeSinceEnd >= AutoTackleConfig.DribbleDelayTime then
-                            state.DelayTriggered = true
+                            state.delayTriggered = true
                             shouldTackle = true
                             reason = "Smart+Delay"
                         else
@@ -558,7 +560,7 @@ local function EagleEye(ball, owner)
                     end
                 else
                     if timeSinceEnd >= AutoTackleConfig.DribbleDelayTime then
-                        state.DelayTriggered = true
+                        state.delayTriggered = true
                         shouldTackle = true
                         reason = "DelayEnd"
                     else
@@ -570,7 +572,7 @@ local function EagleEye(ball, owner)
         end
     end
 
-    if shouldTackle and waitTime <= 0 and mode ~= "None" and not inCooldown and not isDribbling then
+    if shouldTackle and not inCooldown and not isDribbling then
         if not EagleEyeWaitStart then
             waitTime = AutoTackleConfig.EagleEyeMinDelay + math.random() * (AutoTackleConfig.EagleEyeMaxDelay - AutoTackleConfig.EagleEyeMinDelay)
             EagleEyeWaitStart = os.clock()
@@ -610,85 +612,98 @@ local function EagleEye(ball, owner)
     end
 end
 
--- ЦИКЛЫ
-RunService.Heartbeat:Connect(function()
-    pcall(PrecomputePlayers)
-    pcall(UpdateTargetRings)
-end)
-
-RunService.Heartbeat:Connect(function()
-    if not AutoTackleConfig.Enabled then
-        if TackleGui then
-            TackleGui.TargetLabel.Text = "Target: None"
-            TackleGui.DribblingLabel.Text = "Dribbling: false"
-            TackleGui.TacklingLabel.Text = "Tackling: false"
-            TackleGui.EagleEyeLabel.Text = "EagleEye: Idle"
-        end
-        UpdateTargetRing(nil, math.huge)
-        return
-    end
-    pcall(function()
-        local canTackle, ball, distance, owner = CanTackle()
-        if not canTackle or not ball then
-            if TackleGui then
-                TackleGui.TargetLabel.Text = "Target: None"
-                TackleGui.DribblingLabel.Text = "Dribbling: false"
-                TackleGui.TacklingLabel.Text = "Tackling: false"
-                TackleGui.EagleEyeLabel.Text = "EagleEye: Idle"
+-- === AUTO TACKLE MODULE ===
+local AutoTackle = {}
+AutoTackle.Start = function()
+    if AutoTackleStatus.Running then return end
+    AutoTackleStatus.Running = true
+    SetupTackleGui()
+    AutoTackleStatus.Connection = RunService.Heartbeat:Connect(function()
+        pcall(function()
+            local canTackle, ball, distance, owner = CanTackle()
+            if not canTackle or not ball then
+                if TackleGui then
+                    TackleGui.TargetLabel.Text = "Target: None"
+                    TackleGui.DribblingLabel.Text = "Dribbling: false"
+                    TackleGui.TacklingLabel.Text = "Tackling: false"
+                    TackleGui.EagleEyeLabel.Text = "EagleEye: Idle"
+                end
+                UpdateTargetRing(nil, math.huge)
+                return
             end
-            UpdateTargetRing(nil, math.huge)
-            return
-        end
-        if distance <= AutoTackleConfig.TackleDistance then
-            PerformTackle(ball, owner)
-        else
-            EagleEye(ball, owner)
-        end
+            if distance <= AutoTackleConfig.TackleDistance then
+                PerformTackle(ball, owner)
+            else
+                EagleEye(ball, owner)
+            end
+        end)
     end)
-end)
-
-RunService.RenderStepped:Connect(function()
-    if not AutoDribbleConfig.Enabled then
-        if DribbleGui then
-            DribbleGui.TargetLabel.Text = "Targets: 0"
-            DribbleGui.TacklingLabel.Text = "Nearest: None"
-            DribbleGui.AutoDribbleLabel.Text = "AutoDribble: Idle"
-        end
-        return
+    notify("AutoTackle", "Started", true)
+end
+AutoTackle.Stop = function()
+    if AutoTackleStatus.Connection then AutoTackleStatus.Connection:Disconnect(); AutoTackleStatus.Connection = nil end
+    AutoTackleStatus.Running = false
+    if TackleGui then
+        for _, label in pairs(TackleGui) do if label.Remove then label:Remove() end end
+        TackleGui = nil
     end
+    for _, line in ipairs(TargetRingLines) do if line.Remove then line:Remove() end end
+    TargetRingLines = {}
+    notify("AutoTackle", "Stopped", true)
+end
 
-    pcall(function()
-        -- Находим ближайшего игрока с нужным tackle-ID
-        local specificTarget = nil
-        local minDist = math.huge
-        local targetCount = 0
+-- === AUTO DRIBBLE MODULE ===
+local AutoDribble = {}
+AutoDribble.Start = function()
+    if AutoDribbleStatus.Running then return end
+    AutoDribbleStatus.Running = true
+    SetupDribbleGui()
+    AutoDribbleStatus.Connection = RunService.Heartbeat:Connect(PrecomputePlayers)
+    AutoDribbleStatus.RenderConnection = RunService.RenderStepped:Connect(function()
+        pcall(function()
+            local specificTarget = nil
+            local minDist = math.huge
+            local targetCount = 0
 
-        for player, data in pairs(PrecomputedPlayers) do
-            if data.IsValid and TackleStates[player].IsTackling then
-                targetCount += 1
-                if data.Distance < minDist then
-                    minDist = data.Distance
-                    specificTarget = player
+            for player, data in pairs(PrecomputedPlayers) do
+                if data.IsValid and TackleStates[player].IsTackling then
+                    targetCount = targetCount + 1
+                    if data.Distance < minDist then
+                        minDist = data.Distance
+                        specificTarget = player
+                    end
                 end
             end
-        end
 
-        if DribbleGui then
-            DribbleGui.TargetLabel.Text = "Targets: " .. targetCount
-            DribbleGui.TacklingLabel.Text = specificTarget and string.format("Nearest: %.1f", minDist) or "Nearest: None"
+            if DribbleGui then
+                DribbleGui.TargetLabel.Text = "Targets: " .. targetCount
+                DribbleGui.TacklingLabel.Text = specificTarget and string.format("Nearest: %.1f", minDist) or "Nearest: None"
 
-            if HasBall and CanDribbleNow and specificTarget and minDist <= AutoDribbleConfig.DribbleActivationDistance then
-                PerformDribble()
-            else
-                DribbleGui.AutoDribbleLabel.Text = "AutoDribble: Idle"
+                if HasBall and CanDribbleNow and specificTarget and minDist <= AutoDribbleConfig.DribbleActivationDistance then
+                    PerformDribble()
+                else
+                    DribbleGui.AutoDribbleLabel.Text = "AutoDribble: Idle"
+                end
             end
-        end
+        end)
     end)
-end)
+    notify("AutoDribble", "Started", true)
+end
+AutoDribble.Stop = function()
+    if AutoDribbleStatus.Connection then AutoDribbleStatus.Connection:Disconnect(); AutoDribbleStatus.Connection = nil end
+    if AutoDribbleStatus.RenderConnection then AutoDribbleStatus.RenderConnection:Disconnect(); AutoDribbleStatus.RenderConnection = nil end
+    AutoDribbleStatus.Running = false
+    if DribbleGui then
+        for _, label in pairs(DribbleGui) do if label.Remove then label:Remove() end end
+        DribbleGui = nil
+    end
+    for player, ring in pairs(TargetRings) do
+        for _, line in ipairs(ring) do if line.Remove then line:Remove() end end
+    end
+    TargetRings = {}
+    notify("AutoDribble", "Stopped", true)
+end
 
---[[
-    UI INTEGRATION
---]]
 local uiElements = {}
 
 local function SetupUI(UI)
@@ -959,99 +974,6 @@ local function SetupUI(UI)
     })
 end
 
--- === AUTO TACKLE MODULE ===
-local AutoTackle = {}
-AutoTackle.Start = function()
-    if AutoTackleStatus.Running then return end
-    AutoTackleStatus.Running = true
-    SetupTackleGui()
-    AutoTackleStatus.Connection = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            local canTackle, ball, distance, owner = CanTackle()
-            if not canTackle or not ball then
-                if TackleGui then
-                    TackleGui.TargetLabel.Text = "Target: None"
-                    TackleGui.DribblingLabel.Text = "Dribbling: false"
-                    TackleGui.TacklingLabel.Text = "Tackling: false"
-                    TackleGui.EagleEyeLabel.Text = "EagleEye: Idle"
-                end
-                UpdateTargetRing(nil, math.huge)
-                return
-            end
-            if distance <= AutoTackleConfig.TackleDistance then
-                PerformTackle(ball, owner)
-            else
-                EagleEye(ball, owner)
-            end
-        end)
-    end)
-    notify("AutoTackle", "Started", true)
-end
-AutoTackle.Stop = function()
-    if AutoTackleStatus.Connection then AutoTackleStatus.Connection:Disconnect(); AutoTackleStatus.Connection = nil end
-    AutoTackleStatus.Running = false
-    if TackleGui then
-        for _, label in pairs(TackleGui) do if label.Remove then label:Remove() end end
-        TackleGui = nil
-    end
-    for _, line in ipairs(TargetRingLines) do if line.Remove then line:Remove() end end
-    TargetRingLines = {}
-    notify("AutoTackle", "Stopped", true)
-end
-
--- === AUTO DRIBBLE MODULE ===
-local AutoDribble = {}
-AutoDribble.Start = function()
-    if AutoDribbleStatus.Running then return end
-    AutoDribbleStatus.Running = true
-    SetupDribbleGui()
-    AutoDribbleStatus.Connection = RunService.Heartbeat:Connect(PrecomputePlayers)
-    AutoDribbleStatus.RenderConnection = RunService.RenderStepped:Connect(function()
-        pcall(function()
-            local specificTarget = nil
-            local minDist = math.huge
-            local targetCount = 0
-
-            for player, data in pairs(PrecomputedPlayers) do
-                if data.IsValid and TackleStates[player].IsTackling then
-                    targetCount += 1
-                    if data.Distance < minDist then
-                        minDist = data.Distance
-                        specificTarget = player
-                    end
-                end
-            end
-
-            if DribbleGui then
-                DribbleGui.TargetLabel.Text = "Targets: " .. targetCount
-                DribbleGui.TacklingLabel.Text = specificTarget and string.format("Nearest: %.1f", minDist) or "Nearest: None"
-
-                if HasBall and CanDribbleNow and specificTarget and minDist <= AutoDribbleConfig.DribbleActivationDistance then
-                    PerformDribble()
-                else
-                    DribbleGui.AutoDribbleLabel.Text = "AutoDribble: Idle"
-                end
-            end
-        end)
-    end)
-    notify("AutoDribble", "Started", true)
-end
-AutoDribble.Stop = function()
-    if AutoDribbleStatus.Connection then AutoDribbleStatus.Connection:Disconnect(); AutoDribbleStatus.Connection = nil end
-    if AutoDribbleStatus.RenderConnection then AutoDribbleStatus.RenderConnection:Disconnect(); AutoDribbleStatus.RenderConnection = nil end
-    AutoDribbleStatus.Running = false
-    if DribbleGui then
-        for _, label in pairs(DribbleGui) do if label.Remove then label:Remove() end end
-        DribbleGui = nil
-    end
-    for player, ring in pairs(TargetRings) do
-        for _, line in ipairs(ring) do if line.Remove then line:Remove() end end
-    end
-    TargetRings = {}
-    notify("AutoDribble", "Stopped", true)
-end
-
--- === МОДУЛЬ ===
 local AutoTackleDribbleModule = {}
 
 function AutoTackleDribbleModule.Init(UI, coreParam, notifyFunc)
