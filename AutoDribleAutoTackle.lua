@@ -50,7 +50,8 @@ local AutoTackleConfig = {
     EagleEyeMinDelay = 0.1,
     EagleEyeMaxDelay = 1.0,
     DebugText = true,
-    TextPosition = {X = 0.5, Y = 0.6}
+    TextPositionX = 0.5,
+    TextPositionY = 0.6
 }
 
 local AutoDribbleConfig = {
@@ -63,7 +64,8 @@ local AutoDribbleConfig = {
     TacklePredictionTime = 0.3,
     TackleAngleThreshold = 0.7,
     DebugText = true,
-    TextPosition = {X = 0.5, Y = 0.55}
+    TextPositionX = 0.5,
+    TextPositionY = 0.55
 }
 
 -- === СОСТОЯНИЯ ===
@@ -102,8 +104,8 @@ local function SetupTackleGUI()
     }
     
     local s = Camera.ViewportSize
-    local cx = s.X * AutoTackleConfig.TextPosition.X
-    local y = s.Y * AutoTackleConfig.TextPosition.Y
+    local cx = s.X * AutoTackleConfig.TextPositionX
+    local y = s.Y * AutoTackleConfig.TextPositionY
     
     for i, v in ipairs({TackleGui.WaitLabel, TackleGui.TargetLabel, TackleGui.DribblingLabel, TackleGui.TacklingLabel, TackleGui.EagleEyeLabel}) do
         v.Size = 18
@@ -131,8 +133,8 @@ local function SetupDribbleGUI()
     }
     
     local s = Camera.ViewportSize
-    local cx = s.X * AutoDribbleConfig.TextPosition.X
-    local y = s.Y * AutoDribbleConfig.TextPosition.Y
+    local cx = s.X * AutoDribbleConfig.TextPositionX
+    local y = s.Y * AutoDribbleConfig.TextPositionY
     
     for i, v in ipairs({DribbleGui.StatusLabel, DribbleGui.TargetLabel, DribbleGui.TacklingLabel, DribbleGui.AutoDribbleLabel}) do
         v.Size = 18
@@ -174,8 +176,8 @@ end
 
 -- ФУНКЦИЯ ПЕРЕМЕЩЕНИЯ ТЕКСТА
 local function UpdateTackleTextPosition(x, y)
-    AutoTackleConfig.TextPosition.X = x
-    AutoTackleConfig.TextPosition.Y = y
+    AutoTackleConfig.TextPositionX = x
+    AutoTackleConfig.TextPositionY = y
     local s = Camera.ViewportSize
     local cx = s.X * x
     local py = s.Y * y
@@ -187,8 +189,8 @@ local function UpdateTackleTextPosition(x, y)
 end
 
 local function UpdateDribbleTextPosition(x, y)
-    AutoDribbleConfig.TextPosition.X = x
-    AutoDribbleConfig.TextPosition.Y = y
+    AutoDribbleConfig.TextPositionX = x
+    AutoDribbleConfig.TextPositionY = y
     local s = Camera.ViewportSize
     local cx = s.X * x
     local py = s.Y * y
@@ -273,6 +275,12 @@ local function IsSpecificTackle(targetPlayer)
     return false
 end
 
+local function GetAngleToTarget(targetPos)
+    local direction = (targetPos - v_u_4.Position).Unit
+    local look = v_u_4.CFrame.LookVector
+    return math.deg(math.acos(math.clamp(direction:Dot(look), -1, 1)))
+end
+
 local function PrecomputePlayers()
     PrecomputedPlayers = {}
     HasBall = false
@@ -322,11 +330,14 @@ local function PrecomputePlayers()
         if distance > AutoDribbleConfig.MaxDribbleDistance then continue end
 
         local predictedPos = targetRoot.Position + targetRoot.AssemblyLinearVelocity * AutoDribbleConfig.PredictionTime
-        local directionToPlayer = (v_u_4.Position - targetRoot.Position).Unit
+        local tacklePredictedPos = targetRoot.Position + targetRoot.AssemblyLinearVelocity * AutoDribbleConfig.TacklePredictionTime
+        local angle = GetAngleToTarget(predictedPos)
 
         PrecomputedPlayers[player] = {
             Distance = distance,
             PredictedPos = predictedPos,
+            TacklePredictedPos = tacklePredictedPos,
+            Angle = angle,
             IsValid = true,
             IsTackling = TackleStates[player].IsTackling,
             RootPart = targetRoot
@@ -356,6 +367,11 @@ local function CanTackle()
         if targetHumanoid and targetHumanoid.HipHeight >= 4 then
             return false, nil, nil, nil
         end
+    end
+    local predictedPos = PredictBallPosition(ball)
+    local angle = GetAngleToTarget(predictedPos or ball.Position)
+    if angle > AutoTackleConfig.MaxAngle then
+        return false, nil, nil, nil
     end
     local bools = workspace:FindFirstChild(LocalPlayer.Name) and workspace[LocalPlayer.Name]:FindFirstChild("Bools")
     if bools and (bools.TackleDebounce.Value or bools.Tackled.Value or v_u_2:FindFirstChild("Bools") and v_u_2.Bools.Debounce.Value) then
@@ -401,9 +417,18 @@ local function PerformTackle(ball, owner)
     end
 end
 
-local function PerformDribble()
+local function PerformDribble(target)
     local bools = workspace:FindFirstChild(LocalPlayer.Name) and workspace[LocalPlayer.Name]:FindFirstChild("Bools")
     if not bools or bools.dribbleDebounce.Value then return end
+    if target then
+        local data = PrecomputedPlayers[target]
+        if data then
+            local angle = data.Angle
+            if angle > AutoDribbleConfig.MaxAngle then return end
+            local dot = v_u_4.CFrame.LookVector:Dot((data.TacklePredictedPos - v_u_4.Position).Unit)
+            if dot < AutoDribbleConfig.TackleAngleThreshold then return end
+        end
+    end
     pcall(function() ActionRemote:FireServer("Deke") end)
     if AutoDribbleStatus.DebugText and DribbleGui.StatusLabel then
         DribbleGui.StatusLabel.Text = "Dribble: Cooldown"
@@ -681,16 +706,14 @@ AutoDribble.Start = function()
             if AutoDribbleStatus.DebugText then
                 DribbleGui.TargetLabel.Text = "Targets: " .. targetCount
                 DribbleGui.TacklingLabel.Text = specificTarget and string.format("Tackle: %.1f", minDist) or "Tackle: None"
-
-                if HasBall and CanDribbleNow and specificTarget and minDist <= AutoDribbleConfig.DribbleActivationDistance then
-                    PerformDribble()
-                else
-                    DribbleGui.AutoDribbleLabel.Text = "AutoDribble: Idle"
-                end
             end
 
             if HasBall and CanDribbleNow and specificTarget and minDist <= AutoDribbleConfig.DribbleActivationDistance then
-                PerformDribble()
+                PerformDribble(specificTarget)
+            else
+                if AutoDribbleStatus.DebugText then
+                    DribbleGui.AutoDribbleLabel.Text = "AutoDribble: Idle"
+                end
             end
         end)
     end)
@@ -793,6 +816,13 @@ function AutoTackleDribbleModule.Init(UI, coreParam, notifyFunc)
         }, "AutoTackleRotationType")
         
         UI.Sections.AutoTackle:Divider()
+        uiElements.AutoTackleMaxAngle = UI.Sections.AutoTackle:Slider({ 
+            Name = "Max Angle", 
+            Minimum = 0, Maximum = 360, Default = AutoTackleConfig.MaxAngle, Precision = 1,
+            Callback = function(v) AutoTackleConfig.MaxAngle = v end 
+        }, "AutoTackleMaxAngle")
+        
+        UI.Sections.AutoTackle:Divider()
         uiElements.AutoTackleEagleEyeExceptions = UI.Sections.AutoTackle:Dropdown({ 
             Name = "EagleEye Exceptions", 
             Options = {"None", "OnlyDribble", "Dribble", "Dribble&Tackle"}, 
@@ -824,6 +854,19 @@ function AutoTackleDribbleModule.Init(UI, coreParam, notifyFunc)
             Minimum = 0, Maximum = 2, Default = AutoTackleConfig.EagleEyeMaxDelay, Precision = 2,
             Callback = function(v) AutoTackleConfig.EagleEyeMaxDelay = v end 
         }, "AutoTackleEagleEyeMaxDelay")
+        
+        UI.Sections.AutoTackle:Divider()
+        uiElements.TackleTextX = UI.Sections.AutoTackle:Slider({ 
+            Name = "Text Position X", 
+            Minimum = 0, Maximum = 1, Default = AutoTackleConfig.TextPositionX, Precision = 2,
+            Callback = function(v) UpdateTackleTextPosition(v, AutoTackleConfig.TextPositionY) end 
+        }, "TackleTextX")
+        
+        uiElements.TackleTextY = UI.Sections.AutoTackle:Slider({ 
+            Name = "Text Position Y", 
+            Minimum = 0, Maximum = 1, Default = AutoTackleConfig.TextPositionY, Precision = 2,
+            Callback = function(v) UpdateTackleTextPosition(AutoTackleConfig.TextPositionX, v) end 
+        }, "TackleTextY")
     end
     
     -- AutoDribble Section
@@ -858,39 +901,35 @@ function AutoTackleDribbleModule.Init(UI, coreParam, notifyFunc)
             Callback = function(v) AutoDribbleConfig.DribbleActivationDistance = v end 
         }, "AutoDribbleActivationDistance")
         
-        uiElements.AutoDribblePredictionTime = UI.Sections.AutoDribble:Slider({ 
-            Name = "Prediction Time", 
-            Minimum = 0.05, Maximum = 0.5, Default = AutoDribbleConfig.PredictionTime, Precision = 3,
-            Callback = function(v) AutoDribbleConfig.PredictionTime = v end 
-        }, "AutoDribblePredictionTime")
-    end
-    
-    -- Text Position Controls
-    if UI.Sections.TextPosition then
-        UI.Sections.TextPosition:Header({ Name = "Text Position" })
-        UI.Sections.TextPosition:Divider()
-        uiElements.TackleTextX = UI.Sections.TextPosition:Slider({ 
-            Name = "AutoTackle X", 
-            Minimum = 0, Maximum = 1, Default = AutoTackleConfig.TextPosition.X, Precision = 2,
-            Callback = function(v) UpdateTackleTextPosition(v, AutoTackleConfig.TextPosition.Y) end 
-        }, "TackleTextX")
+        uiElements.AutoDribbleMaxAngle = UI.Sections.AutoDribble:Slider({ 
+            Name = "Max Angle", 
+            Minimum = 0, Maximum = 360, Default = AutoDribbleConfig.MaxAngle, Precision = 1,
+            Callback = function(v) AutoDribbleConfig.MaxAngle = v end 
+        }, "AutoDribbleMaxAngle")
         
-        uiElements.TackleTextY = UI.Sections.TextPosition:Slider({ 
-            Name = "AutoTackle Y", 
-            Minimum = 0, Maximum = 1, Default = AutoTackleConfig.TextPosition.Y, Precision = 2,
-            Callback = function(v) UpdateTackleTextPosition(AutoTackleConfig.TextPosition.X, v) end 
-        }, "TackleTextY")
+        uiElements.AutoDribbleTacklePredictionTime = UI.Sections.AutoDribble:Slider({ 
+            Name = "Tackle Prediction Time", 
+            Minimum = 0.1, Maximum = 1.0, Default = AutoDribbleConfig.TacklePredictionTime, Precision = 2,
+            Callback = function(v) AutoDribbleConfig.TacklePredictionTime = v end 
+        }, "AutoDribbleTacklePredictionTime")
         
-        uiElements.DribbleTextX = UI.Sections.TextPosition:Slider({ 
-            Name = "AutoDribble X", 
-            Minimum = 0, Maximum = 1, Default = AutoDribbleConfig.TextPosition.X, Precision = 2,
-            Callback = function(v) UpdateDribbleTextPosition(v, AutoDribbleConfig.TextPosition.Y) end 
+        uiElements.AutoDribbleTackleAngleThreshold = UI.Sections.AutoDribble:Slider({ 
+            Name = "Tackle Angle Threshold", 
+            Minimum = 0.0, Maximum = 1.0, Default = AutoDribbleConfig.TackleAngleThreshold, Precision = 2,
+            Callback = function(v) AutoDribbleConfig.TackleAngleThreshold = v end 
+        }, "AutoDribbleTackleAngleThreshold")
+        
+        UI.Sections.AutoDribble:Divider()
+        uiElements.DribbleTextX = UI.Sections.AutoDribble:Slider({ 
+            Name = "Text Position X", 
+            Minimum = 0, Maximum = 1, Default = AutoDribbleConfig.TextPositionX, Precision = 2,
+            Callback = function(v) UpdateDribbleTextPosition(v, AutoDribbleConfig.TextPositionY) end 
         }, "DribbleTextX")
         
-        uiElements.DribbleTextY = UI.Sections.TextPosition:Slider({ 
-            Name = "AutoDribble Y", 
-            Minimum = 0, Maximum = 1, Default = AutoDribbleConfig.TextPosition.Y, Precision = 2,
-            Callback = function(v) UpdateDribbleTextPosition(AutoDribbleConfig.TextPosition.X, v) end 
+        uiElements.DribbleTextY = UI.Sections.AutoDribble:Slider({ 
+            Name = "Text Position Y", 
+            Minimum = 0, Maximum = 1, Default = AutoDribbleConfig.TextPositionY, Precision = 2,
+            Callback = function(v) UpdateDribbleTextPosition(AutoDribbleConfig.TextPositionX, v) end 
         }, "DribbleTextY")
     end
     
@@ -912,18 +951,25 @@ function AutoTackleDribbleModule.Init(UI, coreParam, notifyFunc)
                 AutoTackleConfig.OnlyPlayer = uiElements.AutoTackleOnlyPlayer:GetState()
                 AutoTackleConfig.RotationMethod = uiElements.AutoTackleRotationMethod:GetSelectedOption()
                 AutoTackleConfig.RotationType = uiElements.AutoTackleRotationType:GetSelectedOption()
+                AutoTackleConfig.MaxAngle = uiElements.AutoTackleMaxAngle:GetValue()
                 AutoTackleConfig.EagleEyeExceptions = uiElements.AutoTackleEagleEyeExceptions:GetSelectedOption()
                 AutoTackleConfig.DribbleDelay = uiElements.AutoTackleDribbleDelay:GetSelectedOption()
                 AutoTackleConfig.DribbleDelayTime = uiElements.AutoTackleDribbleDelayTime:GetValue()
                 AutoTackleConfig.EagleEyeMinDelay = uiElements.AutoTackleEagleEyeMinDelay:GetValue()
                 AutoTackleConfig.EagleEyeMaxDelay = uiElements.AutoTackleEagleEyeMaxDelay:GetValue()
+                AutoTackleConfig.TextPositionX = uiElements.TackleTextX:GetValue()
+                AutoTackleConfig.TextPositionY = uiElements.TackleTextY:GetValue()
                 
                 -- Sync AutoDribble
                 AutoDribbleConfig.Enabled = uiElements.AutoDribbleEnabled:GetState()
                 AutoDribbleConfig.DebugText = uiElements.AutoDribbleDebugText:GetState()
                 AutoDribbleConfig.MaxDribbleDistance = uiElements.AutoDribbleMaxDistance:GetValue()
                 AutoDribbleConfig.DribbleActivationDistance = uiElements.AutoDribbleActivationDistance:GetValue()
-                AutoDribbleConfig.PredictionTime = uiElements.AutoDribblePredictionTime:GetValue()
+                AutoDribbleConfig.MaxAngle = uiElements.AutoDribbleMaxAngle:GetValue()
+                AutoDribbleConfig.TacklePredictionTime = uiElements.AutoDribbleTacklePredictionTime:GetValue()
+                AutoDribbleConfig.TackleAngleThreshold = uiElements.AutoDribbleTackleAngleThreshold:GetValue()
+                AutoDribbleConfig.TextPositionX = uiElements.DribbleTextX:GetValue()
+                AutoDribbleConfig.TextPositionY = uiElements.DribbleTextY:GetValue()
                 
                 -- Update statuses
                 AutoTackleStatus.DebugText = AutoTackleConfig.DebugText
@@ -934,8 +980,8 @@ function AutoTackleDribbleModule.Init(UI, coreParam, notifyFunc)
                 if AutoDribbleConfig.Enabled then if not AutoDribbleStatus.Running then AutoDribble.Start() end else if AutoDribbleStatus.Running then AutoDribble.Stop() end end
                 
                 -- Update text positions
-                UpdateTackleTextPosition(AutoTackleConfig.TextPosition.X, AutoTackleConfig.TextPosition.Y)
-                UpdateDribbleTextPosition(AutoDribbleConfig.TextPosition.X, AutoDribbleConfig.TextPosition.Y)
+                UpdateTackleTextPosition(AutoTackleConfig.TextPositionX, AutoTackleConfig.TextPositionY)
+                UpdateDribbleTextPosition(AutoDribbleConfig.TextPositionX, AutoDribbleConfig.TextPositionY)
                 
                 ToggleTackleDebugText(AutoTackleStatus.DebugText)
                 ToggleDribbleDebugText(AutoDribbleStatus.DebugText)
