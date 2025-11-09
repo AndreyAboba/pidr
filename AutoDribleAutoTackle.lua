@@ -1,10 +1,15 @@
--- AutoTackle & AutoDribble Module
+--[[
+    AutoTackle & AutoDribble Module
+    Adapted for UI Library
+    Removed "Always" from RotationMethod
+    Separate Debug Drawing for Tackle/Dribble, positioned right of AutoShoot
+--]]
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = game:GetService("Debris")
-local Workspace = game:GetService("Workspace")
-local Camera = Workspace.CurrentCamera
+local Camera = workspace.CurrentCamera
 local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
@@ -24,15 +29,18 @@ local DribbleAnims = Animations:WaitForChild("Dribble")
 local TackleAnims = Animations:WaitForChild("TackleAnims")
 
 local DribbleAnimIds = {}
+local SPECIFIC_TACKLE_ID = "rbxassetid://14317040670"
+
+-- Собираем только Dribble-анимации
 for _, anim in pairs(DribbleAnims:GetChildren()) do
     if anim:IsA("Animation") then
         table.insert(DribbleAnimIds, anim.AnimationId)
     end
 end
 
--- === CONFIG ===
+-- CONFIG
 local AutoTackleConfig = {
-    Enabled = true,
+    Enabled = false,
     MaxDistance = 20,
     TackleDistance = 0,
     OptimalDistanceMin = 3,
@@ -51,7 +59,7 @@ local AutoTackleConfig = {
 }
 
 local AutoDribbleConfig = {
-    Enabled = true,
+    Enabled = false,
     MaxDribbleDistance = 30,
     DribbleActivationDistance = 16,
     MaxAngle = 360,
@@ -61,18 +69,19 @@ local AutoDribbleConfig = {
     TackleAngleThreshold = 0.7
 }
 
--- === STATUS ===
+-- STATUS
 local AutoTackleStatus = {
     Running = false,
-    Connection = nil
+    Connection = nil,
+    RenderConnection = nil
 }
 
 local AutoDribbleStatus = {
     Running = false,
-    Connection = nil
+    Connection = nil,
+    RenderConnection = nil
 }
 
--- === STATES ===
 local DribbleStates = {}
 local TackleStates = {}
 local PrecomputedPlayers = {}
@@ -81,75 +90,68 @@ local CanDribbleNow = false
 local EagleEyeWaitStart = nil
 local EagleEyeWaitTime = 0
 
--- === GUI (Drawing) ===
+-- GUI (Separate for Tackle/Dribble, positioned right of AutoShoot)
 local TackleGui = nil
 local DribbleGui = nil
-local Gui = nil
-local TargetRingLines = nil
+local TargetRingLines = {}
 local TargetRings = {}
 
 local function SetupTackleGui()
     TackleGui = {
-        TackleWaitLabel = Drawing.new("Text"),
-        TackleTargetLabel = Drawing.new("Text"),
-        TackleDribblingLabel = Drawing.new("Text"),
-        TackleTacklingLabel = Drawing.new("Text"),
+        WaitLabel = Drawing.new("Text"),
+        TargetLabel = Drawing.new("Text"),
+        DribblingLabel = Drawing.new("Text"),
+        TacklingLabel = Drawing.new("Text"),
         EagleEyeLabel = Drawing.new("Text")
     }
-    local screenSize = Camera.ViewportSize
-    local centerX = screenSize.X / 2 + 100  -- правее на 100
-    local offsetY = screenSize.Y * 0.6
-    local textLabels = {
-        TackleGui.TackleWaitLabel, TackleGui.TackleTargetLabel, TackleGui.TackleDribblingLabel,
-        TackleGui.TackleTacklingLabel, TackleGui.EagleEyeLabel
-    }
-    for _, label in ipairs(textLabels) do
-        label.Size = 18
+    local s = Camera.ViewportSize
+    local centerX = s.X / 2 + 250  -- Right of AutoShoot (center + 250)
+    local y = s.Y * 0.6
+    local offsetY = y
+
+    for _, label in ipairs({TackleGui.WaitLabel, TackleGui.TargetLabel, TackleGui.DribblingLabel, TackleGui.TacklingLabel, TackleGui.EagleEyeLabel}) do
+        label.Size = 16
         label.Color = Color3.fromRGB(255, 255, 255)
         label.Outline = true
         label.Center = true
-        label.Visible = true
+        label.Visible = AutoTackleConfig.Enabled
+        label.Position = Vector2.new(centerX, offsetY)
+        offsetY = offsetY + 16
     end
-    TackleGui.TackleWaitLabel.Color = Color3.fromRGB(255, 165, 0)
-    TackleGui.TackleWaitLabel.Position = Vector2.new(centerX, offsetY); offsetY += 15
-    TackleGui.TackleTargetLabel.Position = Vector2.new(centerX, offsetY); offsetY += 15
-    TackleGui.TackleDribblingLabel.Position = Vector2.new(centerX, offsetY); offsetY += 15
-    TackleGui.TackleTacklingLabel.Position = Vector2.new(centerX, offsetY); offsetY += 15
-    TackleGui.EagleEyeLabel.Position = Vector2.new(centerX, offsetY)
-    TackleGui.TackleWaitLabel.Text = "Wait: 0.00"
-    TackleGui.TackleTargetLabel.Text = "Target: None"
-    TackleGui.TackleDribblingLabel.Text = "isDribbling: false"
-    TackleGui.TackleTacklingLabel.Text = "isTackling: false"
+
+    TackleGui.WaitLabel.Color = Color3.fromRGB(255, 165, 0)
+    TackleGui.WaitLabel.Text = "Tackle Wait: 0.00s"
+    TackleGui.TargetLabel.Text = "Target: None"
+    TackleGui.DribblingLabel.Text = "Dribbling: false"
+    TackleGui.TacklingLabel.Text = "Tackling: false"
     TackleGui.EagleEyeLabel.Text = "EagleEye: Idle"
 end
 
 local function SetupDribbleGui()
     DribbleGui = {
-        DribbleStatusLabel = Drawing.new("Text"),
-        DribbleTargetLabel = Drawing.new("Text"),
-        DribbleTacklingLabel = Drawing.new("Text"),
+        StatusLabel = Drawing.new("Text"),
+        TargetLabel = Drawing.new("Text"),
+        TacklingLabel = Drawing.new("Text"),
         AutoDribbleLabel = Drawing.new("Text")
     }
-    local screenSize = Camera.ViewportSize
-    local centerX = screenSize.X / 2 + 100  -- правее на 100
-    local offsetY = screenSize.Y * 0.6 - 50
-    local textLabels = {
-        DribbleGui.DribbleStatusLabel, DribbleGui.DribbleTargetLabel, DribbleGui.DribbleTacklingLabel, DribbleGui.AutoDribbleLabel
-    }
-    for _, label in ipairs(textLabels) do
-        label.Size = 18
+    local s = Camera.ViewportSize
+    local centerX = s.X / 2 + 250  -- Same as Tackle
+    local y = s.Y * 0.4  -- Above Tackle
+    local offsetY = y
+
+    for _, label in ipairs({DribbleGui.StatusLabel, DribbleGui.TargetLabel, DribbleGui.TacklingLabel, DribbleGui.AutoDribbleLabel}) do
+        label.Size = 16
         label.Color = Color3.fromRGB(255, 255, 255)
         label.Outline = true
         label.Center = true
-        label.Visible = true
+        label.Visible = AutoDribbleConfig.Enabled
+        label.Position = Vector2.new(centerX, offsetY)
+        offsetY = offsetY + 16
     end
-    DribbleGui.DribbleStatusLabel.Position = Vector2.new(centerX, offsetY); offsetY += 15
-    DribbleGui.DribbleTargetLabel.Position = Vector2.new(centerX, offsetY); offsetY += 15
-    DribbleGui.DribbleTacklingLabel.Position = Vector2.new(centerX, offsetY); offsetY += 15
-    DribbleGui.AutoDribbleLabel.Position = Vector2.new(centerX, offsetY)
-    DribbleGui.DribbleStatusLabel.Text = "Dribble: Ready"
-    DribbleGui.DribbleTargetLabel.Text = "Targets: 0"
-    DribbleGui.DribbleTacklingLabel.Text = "Nearest: None"
+
+    DribbleGui.StatusLabel.Text = "Dribble: Ready"
+    DribbleGui.TargetLabel.Text = "Targets: 0"
+    DribbleGui.TacklingLabel.Text = "Nearest Tackle: None"
     DribbleGui.AutoDribbleLabel.Text = "AutoDribble: Idle"
 end
 
@@ -166,16 +168,6 @@ local function CreateTargetRing()
 end
 
 local function UpdateTargetRing(ball, distance)
-    if not TargetRingLines then
-        TargetRingLines = {}
-        for i = 1, 24 do
-            local line = Drawing.new("Line")
-            line.Thickness = 3
-            line.Color = Color3.fromRGB(255, 0, 0)
-            line.Visible = false
-            table.insert(TargetRingLines, line)
-        end
-    end
     for _, line in ipairs(TargetRingLines) do line.Visible = false end
     if not ball or not ball.Parent then return end
     local center = ball.Position - Vector3.new(0, 0.5, 0)
@@ -260,9 +252,6 @@ local function IsDribbling(targetPlayer)
     return false
 end
 
--- НОВАЯ проверка: только конкретный tackle-ID
-local SPECIFIC_TACKLE_ID = "rbxassetid://14317040670"
-
 local function IsSpecificTackle(targetPlayer)
     if not targetPlayer or not targetPlayer.Character or not targetPlayer.Parent or targetPlayer.TeamColor == LocalPlayer.TeamColor then
         return false
@@ -292,9 +281,9 @@ local function PrecomputePlayers()
     local bools = workspace:FindFirstChild(LocalPlayer.Name) and workspace[LocalPlayer.Name]:FindFirstChild("Bools")
     if bools then
         CanDribbleNow = not bools.dribbleDebounce.Value
-        if DribbleGui then
-            DribbleGui.DribbleStatusLabel.Text = bools.dribbleDebounce.Value and "Dribble: Cooldown" or "Dribble: Ready"
-            DribbleGui.DribbleStatusLabel.Color = bools.dribbleDebounce.Value and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
+        if DribbleGui and DribbleGui.StatusLabel then
+            DribbleGui.StatusLabel.Text = bools.dribbleDebounce.Value and "Dribble: Cooldown" or "Dribble: Ready"
+            DribbleGui.StatusLabel.Color = bools.dribbleDebounce.Value and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
         end
     end
 
@@ -423,9 +412,11 @@ local function PerformDribble()
     local bools = workspace:FindFirstChild(LocalPlayer.Name) and workspace[LocalPlayer.Name]:FindFirstChild("Bools")
     if not bools or bools.dribbleDebounce.Value then return end
     pcall(function() ActionRemote:FireServer("Deke") end)
-    if DribbleGui then
-        DribbleGui.DribbleStatusLabel.Text = "Dribble: Cooldown"
-        DribbleGui.DribbleStatusLabel.Color = Color3.fromRGB(255, 0, 0)
+    if DribbleGui and DribbleGui.StatusLabel then
+        DribbleGui.StatusLabel.Text = "Dribble: Cooldown"
+        DribbleGui.StatusLabel.Color = Color3.fromRGB(255, 0, 0)
+    end
+    if DribbleGui and DribbleGui.AutoDribbleLabel then
         DribbleGui.AutoDribbleLabel.Text = "AutoDribble: DEKE (Slide Tackle!)"
     end
 end
@@ -433,9 +424,9 @@ end
 local function EagleEye(ball, owner)
     if not owner or not owner.Character or not ball then
         if TackleGui then
-            TackleGui.TackleTargetLabel.Text = "Target: None"
-            TackleGui.TackleDribblingLabel.Text = "isDribbling: false"
-            TackleGui.TackleTacklingLabel.Text = "isTackling: false"
+            TackleGui.TargetLabel.Text = "Target: None"
+            TackleGui.DribblingLabel.Text = "Dribbling: false"
+            TackleGui.TacklingLabel.Text = "Tackling: false"
             TackleGui.EagleEyeLabel.Text = "EagleEye: Idle"
         end
         UpdateTargetRing(nil, math.huge)
@@ -459,9 +450,9 @@ local function EagleEye(ball, owner)
     local isTacklingNow = IsSpecificTackle(owner)
 
     if TackleGui then
-        TackleGui.TackleTargetLabel.Text = "Target: " .. owner.Name
-        TackleGui.TackleDribblingLabel.Text = "isDribbling: " .. tostring(isDribbling)
-        TackleGui.TackleTacklingLabel.Text = "isTackling: " .. tostring(isTacklingNow)
+        TackleGui.TargetLabel.Text = "Target: " .. owner.Name
+        TackleGui.DribblingLabel.Text = "Dribbling: " .. tostring(isDribbling)
+        TackleGui.TacklingLabel.Text = "Tackling: " .. tostring(isTacklingNow)
     end
 
     local mode = AutoTackleConfig.EagleEyeExceptions
@@ -599,10 +590,10 @@ local function EagleEye(ball, owner)
     if TackleGui then
         if waitTime > 0 then
             TackleGui.EagleEyeLabel.Text = "EagleEye: " .. reason
-            TackleGui.TackleWaitLabel.Text = string.format("Wait: %.2f", waitTime)
+            TackleGui.WaitLabel.Text = string.format("Wait: %.2f", waitTime)
         else
             TackleGui.EagleEyeLabel.Text = "EagleEye: Tackling (" .. reason .. ")"
-            TackleGui.TackleWaitLabel.Text = "Wait: 0.00"
+            TackleGui.WaitLabel.Text = "Wait: 0.00"
         end
     end
 
@@ -626,14 +617,23 @@ RunService.Heartbeat:Connect(function()
 end)
 
 RunService.Heartbeat:Connect(function()
-    if not AutoTackleConfig.Enabled then return end
+    if not AutoTackleConfig.Enabled then
+        if TackleGui then
+            TackleGui.TargetLabel.Text = "Target: None"
+            TackleGui.DribblingLabel.Text = "Dribbling: false"
+            TackleGui.TacklingLabel.Text = "Tackling: false"
+            TackleGui.EagleEyeLabel.Text = "EagleEye: Idle"
+        end
+        UpdateTargetRing(nil, math.huge)
+        return
+    end
     pcall(function()
         local canTackle, ball, distance, owner = CanTackle()
         if not canTackle or not ball then
             if TackleGui then
-                TackleGui.TackleTargetLabel.Text = "Target: None"
-                TackleGui.TackleDribblingLabel.Text = "isDribbling: false"
-                TackleGui.TackleTacklingLabel.Text = "isTackling: false"
+                TackleGui.TargetLabel.Text = "Target: None"
+                TackleGui.DribblingLabel.Text = "Dribbling: false"
+                TackleGui.TacklingLabel.Text = "Tackling: false"
                 TackleGui.EagleEyeLabel.Text = "EagleEye: Idle"
             end
             UpdateTargetRing(nil, math.huge)
@@ -650,8 +650,8 @@ end)
 RunService.RenderStepped:Connect(function()
     if not AutoDribbleConfig.Enabled then
         if DribbleGui then
-            DribbleGui.DribbleTargetLabel.Text = "Targets: 0"
-            DribbleGui.DribbleTacklingLabel.Text = "Nearest: None"
+            DribbleGui.TargetLabel.Text = "Targets: 0"
+            DribbleGui.TacklingLabel.Text = "Nearest: None"
             DribbleGui.AutoDribbleLabel.Text = "AutoDribble: Idle"
         end
         return
@@ -674,25 +674,22 @@ RunService.RenderStepped:Connect(function()
         end
 
         if DribbleGui then
-            DribbleGui.DribbleTargetLabel.Text = "Targets: " .. targetCount
-            DribbleGui.DribbleTacklingLabel.Text = specificTarget and string.format("Tackle: %.1f", minDist) or "Tackle: None"
-        end
+            DribbleGui.TargetLabel.Text = "Targets: " .. targetCount
+            DribbleGui.TacklingLabel.Text = specificTarget and string.format("Nearest: %.1f", minDist) or "Nearest: None"
 
-        if HasBall and CanDribbleNow and specificTarget and minDist <= AutoDribbleConfig.DribbleActivationDistance then
-            PerformDribble()
-        else
-            if DribbleGui then
+            if HasBall and CanDribbleNow and specificTarget and minDist <= AutoDribbleConfig.DribbleActivationDistance then
+                PerformDribble()
+            else
                 DribbleGui.AutoDribbleLabel.Text = "AutoDribble: Idle"
             end
         end
     end)
 end)
 
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-    v_u_2 = newChar
-    v_u_4 = newChar:WaitForChild("HumanoidRootPart")
-    v_u_13 = newChar:WaitForChild("Humanoid")
-end)
+--[[
+    UI INTEGRATION
+--]]
+local uiElements = {}
 
 local function SetupUI(UI)
     if UI.Sections.AutoTackle then
@@ -706,15 +703,14 @@ local function SetupUI(UI)
             end
         }, "AutoTackleEnabled")
 
+        UI.Sections.AutoTackle:Divider()
         uiElements.AutoTackleMaxDistance = UI.Sections.AutoTackle:Slider({
             Name = "Max Distance",
             Minimum = 10,
             Maximum = 50,
             Default = AutoTackleConfig.MaxDistance,
             Precision = 1,
-            Callback = function(value)
-                AutoTackleConfig.MaxDistance = value
-            end
+            Callback = function(v) AutoTackleConfig.MaxDistance = v end
         }, "AutoTackleMaxDistance")
 
         uiElements.AutoTackleTackleDistance = UI.Sections.AutoTackle:Slider({
@@ -723,43 +719,37 @@ local function SetupUI(UI)
             Maximum = 10,
             Default = AutoTackleConfig.TackleDistance,
             Precision = 1,
-            Callback = function(value)
-                AutoTackleConfig.TackleDistance = value
-            end
+            Callback = function(v) AutoTackleConfig.TackleDistance = v end
         }, "AutoTackleTackleDistance")
 
+        UI.Sections.AutoTackle:Divider()
         uiElements.AutoTackleOptimalMin = UI.Sections.AutoTackle:Slider({
-            Name = "Optimal Distance Min",
+            Name = "Optimal Min Distance",
             Minimum = 1,
             Maximum = 10,
             Default = AutoTackleConfig.OptimalDistanceMin,
             Precision = 1,
-            Callback = function(value)
-                AutoTackleConfig.OptimalDistanceMin = value
-            end
+            Callback = function(v) AutoTackleConfig.OptimalDistanceMin = v end
         }, "AutoTackleOptimalMin")
 
         uiElements.AutoTackleOptimalMax = UI.Sections.AutoTackle:Slider({
-            Name = "Optimal Distance Max",
+            Name = "Optimal Max Distance",
             Minimum = 5,
-            Maximum = 20,
+            Maximum = 30,
             Default = AutoTackleConfig.OptimalDistanceMax,
             Precision = 1,
-            Callback = function(value)
-                AutoTackleConfig.OptimalDistanceMax = value
-            end
+            Callback = function(v) AutoTackleConfig.OptimalDistanceMax = v end
         }, "AutoTackleOptimalMax")
 
-        uiElements.AutoTackleTackleSpeed = UI.Sections.AutoTackle:Slider({
+        UI.Sections.AutoTackle:Divider()
+        uiElements.AutoTackleSpeed = UI.Sections.AutoTackle:Slider({
             Name = "Tackle Speed",
             Minimum = 20,
-            Maximum = 100,
+            Maximum = 80,
             Default = AutoTackleConfig.TackleSpeed,
             Precision = 1,
-            Callback = function(value)
-                AutoTackleConfig.TackleSpeed = value
-            end
-        }, "AutoTackleTackleSpeed")
+            Callback = function(v) AutoTackleConfig.TackleSpeed = v end
+        }, "AutoTackleSpeed")
 
         uiElements.AutoTacklePredictionTime = UI.Sections.AutoTackle:Slider({
             Name = "Prediction Time",
@@ -767,35 +757,29 @@ local function SetupUI(UI)
             Maximum = 2.0,
             Default = AutoTackleConfig.PredictionTime,
             Precision = 2,
-            Callback = function(value)
-                AutoTackleConfig.PredictionTime = value
-            end
+            Callback = function(v) AutoTackleConfig.PredictionTime = v end
         }, "AutoTacklePredictionTime")
 
+        UI.Sections.AutoTackle:Divider()
         uiElements.AutoTackleOnlyPlayer = UI.Sections.AutoTackle:Toggle({
-            Name = "Only Player",
+            Name = "Only Players",
             Default = AutoTackleConfig.OnlyPlayer,
-            Callback = function(value)
-                AutoTackleConfig.OnlyPlayer = value
-            end
+            Callback = function(v) AutoTackleConfig.OnlyPlayer = v end
         }, "AutoTackleOnlyPlayer")
 
+        UI.Sections.AutoTackle:Divider()
         uiElements.AutoTackleRotationMethod = UI.Sections.AutoTackle:Dropdown({
             Name = "Rotation Method",
-            Options = {"Snap", "Other"},
+            Options = {"Snap"},  -- Убрали "Always"
             Default = AutoTackleConfig.RotationMethod,
-            Callback = function(value)
-                AutoTackleConfig.RotationMethod = value
-            end
+            Callback = function(v) AutoTackleConfig.RotationMethod = v end
         }, "AutoTackleRotationMethod")
 
         uiElements.AutoTackleRotationType = UI.Sections.AutoTackle:Dropdown({
             Name = "Rotation Type",
             Options = {"CFrame"},
             Default = AutoTackleConfig.RotationType,
-            Callback = function(value)
-                AutoTackleConfig.RotationType = value
-            end
+            Callback = function(v) AutoTackleConfig.RotationType = v end
         }, "AutoTackleRotationType")
 
         uiElements.AutoTackleMaxAngle = UI.Sections.AutoTackle:Slider({
@@ -803,28 +787,23 @@ local function SetupUI(UI)
             Minimum = 0,
             Maximum = 360,
             Default = AutoTackleConfig.MaxAngle,
-            Precision = 1,
-            Callback = function(value)
-                AutoTackleConfig.MaxAngle = value
-            end
+            Precision = 0,
+            Callback = function(v) AutoTackleConfig.MaxAngle = v end
         }, "AutoTackleMaxAngle")
 
+        UI.Sections.AutoTackle:Divider()
         uiElements.AutoTackleEagleEyeExceptions = UI.Sections.AutoTackle:Dropdown({
             Name = "EagleEye Exceptions",
             Options = {"None", "OnlyDribble", "Dribble", "Dribble&Tackle"},
             Default = AutoTackleConfig.EagleEyeExceptions,
-            Callback = function(value)
-                AutoTackleConfig.EagleEyeExceptions = value
-            end
+            Callback = function(v) AutoTackleConfig.EagleEyeExceptions = v end
         }, "AutoTackleEagleEyeExceptions")
 
         uiElements.AutoTackleDribbleDelay = UI.Sections.AutoTackle:Dropdown({
             Name = "Dribble Delay",
             Options = {"Delay", "Smart"},
             Default = AutoTackleConfig.DribbleDelay,
-            Callback = function(value)
-                AutoTackleConfig.DribbleDelay = value
-            end
+            Callback = function(v) AutoTackleConfig.DribbleDelay = v end
         }, "AutoTackleDribbleDelay")
 
         uiElements.AutoTackleDribbleDelayTime = UI.Sections.AutoTackle:Slider({
@@ -833,31 +812,25 @@ local function SetupUI(UI)
             Maximum = 5,
             Default = AutoTackleConfig.DribbleDelayTime,
             Precision = 2,
-            Callback = function(value)
-                AutoTackleConfig.DribbleDelayTime = value
-            end
+            Callback = function(v) AutoTackleConfig.DribbleDelayTime = v end
         }, "AutoTackleDribbleDelayTime")
 
         uiElements.AutoTackleEagleEyeMinDelay = UI.Sections.AutoTackle:Slider({
             Name = "EagleEye Min Delay",
-            Minimum = 0.0,
-            Maximum = 2.0,
+            Minimum = 0,
+            Maximum = 1,
             Default = AutoTackleConfig.EagleEyeMinDelay,
             Precision = 2,
-            Callback = function(value)
-                AutoTackleConfig.EagleEyeMinDelay = value
-            end
+            Callback = function(v) AutoTackleConfig.EagleEyeMinDelay = v end
         }, "AutoTackleEagleEyeMinDelay")
 
         uiElements.AutoTackleEagleEyeMaxDelay = UI.Sections.AutoTackle:Slider({
             Name = "EagleEye Max Delay",
-            Minimum = 0.0,
-            Maximum = 2.0,
+            Minimum = 0.1,
+            Maximum = 2,
             Default = AutoTackleConfig.EagleEyeMaxDelay,
             Precision = 2,
-            Callback = function(value)
-                AutoTackleConfig.EagleEyeMaxDelay = value
-            end
+            Callback = function(v) AutoTackleConfig.EagleEyeMaxDelay = v end
         }, "AutoTackleEagleEyeMaxDelay")
     end
 
@@ -872,59 +845,51 @@ local function SetupUI(UI)
             end
         }, "AutoDribbleEnabled")
 
-        uiElements.AutoDribbleMaxDribbleDistance = UI.Sections.AutoDribble:Slider({
+        UI.Sections.AutoDribble:Divider()
+        uiElements.AutoDribbleMaxDistance = UI.Sections.AutoDribble:Slider({
             Name = "Max Dribble Distance",
             Minimum = 10,
             Maximum = 50,
             Default = AutoDribbleConfig.MaxDribbleDistance,
             Precision = 1,
-            Callback = function(value)
-                AutoDribbleConfig.MaxDribbleDistance = value
-            end
-        }, "AutoDribbleMaxDribbleDistance")
+            Callback = function(v) AutoDribbleConfig.MaxDribbleDistance = v end
+        }, "AutoDribbleMaxDistance")
 
-        uiElements.AutoDribbleDribbleActivationDistance = UI.Sections.AutoDribble:Slider({
-            Name = "Dribble Activation Distance",
+        uiElements.AutoDribbleActivationDistance = UI.Sections.AutoDribble:Slider({
+            Name = "Activation Distance",
             Minimum = 5,
             Maximum = 30,
             Default = AutoDribbleConfig.DribbleActivationDistance,
             Precision = 1,
-            Callback = function(value)
-                AutoDribbleConfig.DribbleActivationDistance = value
-            end
-        }, "AutoDribbleDribbleActivationDistance")
+            Callback = function(v) AutoDribbleConfig.DribbleActivationDistance = v end
+        }, "AutoDribbleActivationDistance")
 
+        UI.Sections.AutoDribble:Divider()
         uiElements.AutoDribbleMaxAngle = UI.Sections.AutoDribble:Slider({
             Name = "Max Angle",
             Minimum = 0,
             Maximum = 360,
             Default = AutoDribbleConfig.MaxAngle,
-            Precision = 1,
-            Callback = function(value)
-                AutoDribbleConfig.MaxAngle = value
-            end
+            Precision = 0,
+            Callback = function(v) AutoDribbleConfig.MaxAngle = v end
         }, "AutoDribbleMaxAngle")
 
         uiElements.AutoDribblePredictionTime = UI.Sections.AutoDribble:Slider({
             Name = "Prediction Time",
-            Minimum = 0.01,
-            Maximum = 1.0,
+            Minimum = 0.05,
+            Maximum = 0.5,
             Default = AutoDribbleConfig.PredictionTime,
             Precision = 3,
-            Callback = function(value)
-                AutoDribbleConfig.PredictionTime = value
-            end
+            Callback = function(v) AutoDribbleConfig.PredictionTime = v end
         }, "AutoDribblePredictionTime")
 
         uiElements.AutoDribbleMaxPredictionAngle = UI.Sections.AutoDribble:Slider({
             Name = "Max Prediction Angle",
-            Minimum = 0,
-            Maximum = 180,
+            Minimum = 10,
+            Maximum = 90,
             Default = AutoDribbleConfig.MaxPredictionAngle,
             Precision = 1,
-            Callback = function(value)
-                AutoDribbleConfig.MaxPredictionAngle = value
-            end
+            Callback = function(v) AutoDribbleConfig.MaxPredictionAngle = v end
         }, "AutoDribbleMaxPredictionAngle")
 
         uiElements.AutoDribbleTacklePredictionTime = UI.Sections.AutoDribble:Slider({
@@ -933,9 +898,7 @@ local function SetupUI(UI)
             Maximum = 1.0,
             Default = AutoDribbleConfig.TacklePredictionTime,
             Precision = 2,
-            Callback = function(value)
-                AutoDribbleConfig.TacklePredictionTime = value
-            end
+            Callback = function(v) AutoDribbleConfig.TacklePredictionTime = v end
         }, "AutoDribbleTacklePredictionTime")
 
         uiElements.AutoDribbleTackleAngleThreshold = UI.Sections.AutoDribble:Slider({
@@ -944,64 +907,74 @@ local function SetupUI(UI)
             Maximum = 1.0,
             Default = AutoDribbleConfig.TackleAngleThreshold,
             Precision = 2,
-            Callback = function(value)
-                AutoDribbleConfig.TackleAngleThreshold = value
-            end
+            Callback = function(v) AutoDribbleConfig.TackleAngleThreshold = v end
         }, "AutoDribbleTackleAngleThreshold")
     end
 
     local syncSection = UI.Tabs.Config:Section({ Name = "AutoTackle & AutoDribble Sync", Side = "Right" })
-    syncSection:Header({ Name = "Sync" })
-    syncSection:Button({ Name = "Sync Config", Callback = function()
-        AutoTackleConfig.Enabled = uiElements.AutoTackleEnabled:GetState()
-        AutoTackleConfig.MaxDistance = uiElements.AutoTackleMaxDistance:GetValue()
-        AutoTackleConfig.TackleDistance = uiElements.AutoTackleTackleDistance:GetValue()
-        AutoTackleConfig.OptimalDistanceMin = uiElements.AutoTackleOptimalMin:GetValue()
-        AutoTackleConfig.OptimalDistanceMax = uiElements.AutoTackleOptimalMax:GetValue()
-        AutoTackleConfig.TackleSpeed = uiElements.AutoTackleTackleSpeed:GetValue()
-        AutoTackleConfig.PredictionTime = uiElements.AutoTacklePredictionTime:GetValue()
-        AutoTackleConfig.OnlyPlayer = uiElements.AutoTackleOnlyPlayer:GetState()
-        AutoTackleConfig.RotationMethod = uiElements.AutoTackleRotationMethod:GetValue()
-        AutoTackleConfig.RotationType = uiElements.AutoTackleRotationType:GetValue()
-        AutoTackleConfig.MaxAngle = uiElements.AutoTackleMaxAngle:GetValue()
-        AutoTackleConfig.EagleEyeExceptions = uiElements.AutoTackleEagleEyeExceptions:GetValue()
-        AutoTackleConfig.DribbleDelay = uiElements.AutoTackleDribbleDelay:GetValue()
-        AutoTackleConfig.DribbleDelayTime = uiElements.AutoTackleDribbleDelayTime:GetValue()
-        AutoTackleConfig.EagleEyeMinDelay = uiElements.AutoTackleEagleEyeMinDelay:GetValue()
-        AutoTackleConfig.EagleEyeMaxDelay = uiElements.AutoTackleEagleEyeMaxDelay:GetValue()
+    syncSection:Header({ Name = "Sync Settings" })
+    syncSection:Button({
+        Name = "Sync Config",
+        Callback = function()
+            AutoTackleConfig.Enabled = uiElements.AutoTackleEnabled:GetState()
+            AutoTackleConfig.MaxDistance = uiElements.AutoTackleMaxDistance:GetValue()
+            AutoTackleConfig.TackleDistance = uiElements.AutoTackleTackleDistance:GetValue()
+            AutoTackleConfig.OptimalDistanceMin = uiElements.AutoTackleOptimalMin:GetValue()
+            AutoTackleConfig.OptimalDistanceMax = uiElements.AutoTackleOptimalMax:GetValue()
+            AutoTackleConfig.TackleSpeed = uiElements.AutoTackleSpeed:GetValue()
+            AutoTackleConfig.PredictionTime = uiElements.AutoTacklePredictionTime:GetValue()
+            AutoTackleConfig.OnlyPlayer = uiElements.AutoTackleOnlyPlayer:GetState()
+            AutoTackleConfig.RotationMethod = uiElements.AutoTackleRotationMethod:GetSelected()
+            AutoTackleConfig.RotationType = uiElements.AutoTackleRotationType:GetSelected()
+            AutoTackleConfig.MaxAngle = uiElements.AutoTackleMaxAngle:GetValue()
+            AutoTackleConfig.EagleEyeExceptions = uiElements.AutoTackleEagleEyeExceptions:GetSelected()
+            AutoTackleConfig.DribbleDelay = uiElements.AutoTackleDribbleDelay:GetSelected()
+            AutoTackleConfig.DribbleDelayTime = uiElements.AutoTackleDribbleDelayTime:GetValue()
+            AutoTackleConfig.EagleEyeMinDelay = uiElements.AutoTackleEagleEyeMinDelay:GetValue()
+            AutoTackleConfig.EagleEyeMaxDelay = uiElements.AutoTackleEagleEyeMaxDelay:GetValue()
 
-        AutoDribbleConfig.Enabled = uiElements.AutoDribbleEnabled:GetState()
-        AutoDribbleConfig.MaxDribbleDistance = uiElements.AutoDribbleMaxDribbleDistance:GetValue()
-        AutoDribbleConfig.DribbleActivationDistance = uiElements.AutoDribbleDribbleActivationDistance:GetValue()
-        AutoDribbleConfig.MaxAngle = uiElements.AutoDribbleMaxAngle:GetValue()
-        AutoDribbleConfig.PredictionTime = uiElements.AutoDribblePredictionTime:GetValue()
-        AutoDribbleConfig.MaxPredictionAngle = uiElements.AutoDribbleMaxPredictionAngle:GetValue()
-        AutoDribbleConfig.TacklePredictionTime = uiElements.AutoDribbleTacklePredictionTime:GetValue()
-        AutoDribbleConfig.TackleAngleThreshold = uiElements.AutoDribbleTackleAngleThreshold:GetValue()
+            AutoDribbleConfig.Enabled = uiElements.AutoDribbleEnabled:GetState()
+            AutoDribbleConfig.MaxDribbleDistance = uiElements.AutoDribbleMaxDistance:GetValue()
+            AutoDribbleConfig.DribbleActivationDistance = uiElements.AutoDribbleActivationDistance:GetValue()
+            AutoDribbleConfig.MaxAngle = uiElements.AutoDribbleMaxAngle:GetValue()
+            AutoDribbleConfig.PredictionTime = uiElements.AutoDribblePredictionTime:GetValue()
+            AutoDribbleConfig.MaxPredictionAngle = uiElements.AutoDribbleMaxPredictionAngle:GetValue()
+            AutoDribbleConfig.TacklePredictionTime = uiElements.AutoDribbleTacklePredictionTime:GetValue()
+            AutoDribbleConfig.TackleAngleThreshold = uiElements.AutoDribbleTackleAngleThreshold:GetValue()
 
-        if AutoTackleConfig.Enabled then if not AutoTackleStatus.Running then AutoTackle.Start() end else if AutoTackleStatus.Running then AutoTackle.Stop() end end
-        if AutoDribbleConfig.Enabled then if not AutoDribbleStatus.Running then AutoDribble.Start() end else if AutoDribbleStatus.Running then AutoDribble.Stop() end end
+            if AutoTackleConfig.Enabled then
+                if not AutoTackleStatus.Running then AutoTackle.Start() end
+            else
+                if AutoTackleStatus.Running then AutoTackle.Stop() end
+            end
 
-        notify("Syllinse", "Config synchronized!", true)
-    end })
+            if AutoDribbleConfig.Enabled then
+                if not AutoDribbleStatus.Running then AutoDribble.Start() end
+            else
+                if AutoDribbleStatus.Running then AutoDribble.Stop() end
+            end
+
+            notify("AutoTackle & AutoDribble", "Config synchronized!", true)
+        end
+    })
 end
 
--- === AUTO TACKLE ===
+-- === AUTO TACKLE MODULE ===
 local AutoTackle = {}
-
 AutoTackle.Start = function()
     if AutoTackleStatus.Running then return end
     AutoTackleStatus.Running = true
     SetupTackleGui()
     AutoTackleStatus.Connection = RunService.Heartbeat:Connect(function()
-        if not AutoTackleConfig.Enabled then return end
         pcall(function()
             local canTackle, ball, distance, owner = CanTackle()
             if not canTackle or not ball then
-                TackleGui.TackleTargetLabel.Text = "Target: None"
-                TackleGui.TackleDribblingLabel.Text = "isDribbling: false"
-                TackleGui.TackleTacklingLabel.Text = "isTackling: false"
-                TackleGui.EagleEyeLabel.Text = "EagleEye: Idle"
+                if TackleGui then
+                    TackleGui.TargetLabel.Text = "Target: None"
+                    TackleGui.DribblingLabel.Text = "Dribbling: false"
+                    TackleGui.TacklingLabel.Text = "Tackling: false"
+                    TackleGui.EagleEyeLabel.Text = "EagleEye: Idle"
+                end
                 UpdateTargetRing(nil, math.huge)
                 return
             end
@@ -1014,33 +987,27 @@ AutoTackle.Start = function()
     end)
     notify("AutoTackle", "Started", true)
 end
-
 AutoTackle.Stop = function()
-    if AutoTackleStatus.Connection then
-        AutoTackleStatus.Connection:Disconnect()
-        AutoTackleStatus.Connection = nil
-    end
+    if AutoTackleStatus.Connection then AutoTackleStatus.Connection:Disconnect(); AutoTackleStatus.Connection = nil end
     AutoTackleStatus.Running = false
     if TackleGui then
-        for _, label in pairs(TackleGui) do
-            label:Remove()
-        end
+        for _, label in pairs(TackleGui) do if label.Remove then label:Remove() end end
         TackleGui = nil
     end
+    for _, line in ipairs(TargetRingLines) do if line.Remove then line:Remove() end end
+    TargetRingLines = {}
     notify("AutoTackle", "Stopped", true)
 end
 
--- === AUTO DRIBBLE ===
+-- === AUTO DRIBBLE MODULE ===
 local AutoDribble = {}
-
 AutoDribble.Start = function()
     if AutoDribbleStatus.Running then return end
     AutoDribbleStatus.Running = true
     SetupDribbleGui()
-    AutoDribbleStatus.Connection = RunService.RenderStepped:Connect(function()
-        if not AutoDribbleConfig.Enabled then return end
+    AutoDribbleStatus.Connection = RunService.Heartbeat:Connect(PrecomputePlayers)
+    AutoDribbleStatus.RenderConnection = RunService.RenderStepped:Connect(function()
         pcall(function()
-            -- Находим ближайшего игрока с нужным tackle-ID
             local specificTarget = nil
             local minDist = math.huge
             local targetCount = 0
@@ -1055,31 +1022,32 @@ AutoDribble.Start = function()
                 end
             end
 
-            DribbleGui.DribbleTargetLabel.Text = "Targets: " .. targetCount
-            DribbleGui.DribbleTacklingLabel.Text = specificTarget and string.format("Tackle: %.1f", minDist) or "Tackle: None"
+            if DribbleGui then
+                DribbleGui.TargetLabel.Text = "Targets: " .. targetCount
+                DribbleGui.TacklingLabel.Text = specificTarget and string.format("Nearest: %.1f", minDist) or "Nearest: None"
 
-            if HasBall and CanDribbleNow and specificTarget and minDist <= AutoDribbleConfig.DribbleActivationDistance then
-                PerformDribble()
-            else
-                DribbleGui.AutoDribbleLabel.Text = "AutoDribble: Idle"
+                if HasBall and CanDribbleNow and specificTarget and minDist <= AutoDribbleConfig.DribbleActivationDistance then
+                    PerformDribble()
+                else
+                    DribbleGui.AutoDribbleLabel.Text = "AutoDribble: Idle"
+                end
             end
         end)
     end)
     notify("AutoDribble", "Started", true)
 end
-
 AutoDribble.Stop = function()
-    if AutoDribbleStatus.Connection then
-        AutoDribbleStatus.Connection:Disconnect()
-        AutoDribbleStatus.Connection = nil
-    end
+    if AutoDribbleStatus.Connection then AutoDribbleStatus.Connection:Disconnect(); AutoDribbleStatus.Connection = nil end
+    if AutoDribbleStatus.RenderConnection then AutoDribbleStatus.RenderConnection:Disconnect(); AutoDribbleStatus.RenderConnection = nil end
     AutoDribbleStatus.Running = false
     if DribbleGui then
-        for _, label in pairs(DribbleGui) do
-            label:Remove()
-        end
+        for _, label in pairs(DribbleGui) do if label.Remove then label:Remove() end end
         DribbleGui = nil
     end
+    for player, ring in pairs(TargetRings) do
+        for _, line in ipairs(ring) do if line.Remove then line:Remove() end end
+    end
+    TargetRings = {}
     notify("AutoDribble", "Stopped", true)
 end
 
@@ -1096,25 +1064,18 @@ function AutoTackleDribbleModule.Init(UI, coreParam, notifyFunc)
     SetupUI(UI)
 
     LocalPlayerObj.CharacterAdded:Connect(function(newChar)
-        task.wait(1)
-        Character = newChar
-        Humanoid = newChar:WaitForChild("Humanoid")
-        HumanoidRootPart = newChar:WaitForChild("HumanoidRootPart")
         v_u_2 = newChar
-        v_u_4 = HumanoidRootPart
-        v_u_13 = Humanoid
-        if AutoTackleConfig.Enabled then AutoTackle.Start() end
-        if AutoDribbleConfig.Enabled then AutoDribble.Start() end
+        v_u_4 = newChar:WaitForChild("HumanoidRootPart")
+        v_u_13 = newChar:WaitForChild("Humanoid")
     end)
+
+    if AutoTackleConfig.Enabled then AutoTackle.Start() end
+    if AutoDribbleConfig.Enabled then AutoDribble.Start() end
 end
 
 function AutoTackleDribbleModule:Destroy()
     AutoTackle.Stop()
     AutoDribble.Stop()
-    for player, ring in pairs(TargetRings) do
-        for _, line in ipairs(ring) do line:Remove() end
-    end
-    TargetRings = {}
 end
 
 return AutoTackleDribbleModule
