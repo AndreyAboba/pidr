@@ -3,7 +3,7 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = game:GetService("Debris")
 local UserInputService = game:GetService("UserInputService")
-print('2')
+
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
@@ -46,7 +46,7 @@ local AutoTackleConfig = {
     MaxAngle = 360,
     EagleEyeExceptions = "OnlyDribble",
     DribbleDelay = "Delay",
-    DribbleDelayTime = 0,
+    DribbleDelayTime = 0.65,
     EagleEyeMinDelay = 0.1,
     EagleEyeMaxDelay = 1.0,
     DebugText = true,
@@ -320,12 +320,8 @@ local function PrecomputePlayers()
         local distance = (targetRoot.Position - v_u_4.Position).Magnitude
         if distance > AutoDribbleConfig.MaxDribbleDistance then continue end
 
-        local predictedPos = targetRoot.Position + targetRoot.AssemblyLinearVelocity * AutoDribbleConfig.TacklePredictionTime
-        local directionToPlayer = (v_u_4.Position - targetRoot.Position).Unit
-
         PrecomputedPlayers[player] = {
             Distance = distance,
-            PredictedPos = predictedPos,
             IsValid = true,
             IsTackling = TackleStates[player].IsTackling,
             RootPart = targetRoot
@@ -369,13 +365,8 @@ local function PredictBallPosition(ball)
 end
 
 local function RotateToTarget(targetPos)
-    local currentLook = v_u_4.CFrame.LookVector
-    local targetDir = (targetPos - v_u_4.Position).Unit
-    local angle = math.deg(math.acos(math.clamp(currentLook:Dot(targetDir), -1, 1)))
-    if angle <= AutoTackleConfig.MaxAngle then
-        if AutoTackleConfig.RotationType == "CFrame" then
-            v_u_4.CFrame = CFrame.new(v_u_4.Position, targetPos)
-        end
+    if AutoTackleConfig.RotationType == "CFrame" then
+        v_u_4.CFrame = CFrame.new(v_u_4.Position, targetPos)
     end
 end
 
@@ -452,81 +443,79 @@ local function EagleEye(ball, owner)
         TackleGui.TacklingLabel.Text = "isTackling: " .. tostring(isTacklingNow)
     end
 
-    -- Новая логика: PowerShooting - немедленный tackle
-    local powerShootingBools = workspace:FindFirstChild(owner.Name) and workspace[owner.Name]:FindFirstChild("Bools")
-    local powerShooting = powerShootingBools and powerShootingBools:FindFirstChild("PowerShooting") and powerShootingBools.PowerShooting.Value
-    if powerShooting then
-        local shouldTackle = true
-        local waitTime = 0
-        local reason = "PowerShooting"
-        if AutoTackleStatus.DebugText then
-            TackleGui.EagleEyeLabel.Text = "EagleEye: Tackling (" .. reason .. ")"
-            TackleGui.WaitLabel.Text = "Wait: 0.00"
+    -- Проверка PowerShooting
+    local powerShooting = false
+    if owner.Name and workspace:FindFirstChild(owner.Name) then
+        local targetBools = workspace[owner.Name]:FindFirstChild("Bools")
+        if targetBools and targetBools:FindFirstChild("PowerShooting") then
+            powerShooting = targetBools.PowerShooting.Value
         end
-        UpdateTargetRing(ball, distance)
-        local canTackle, _, _, _ = CanTackle()
-        if canTackle then
-            PerformTackle(ball, owner)
-        end
-        return
     end
 
     local mode = AutoTackleConfig.EagleEyeExceptions
-    local shouldTackle = false
+    local shouldTackleFromMode = false
+    local modeReason = ""
     local waitTime = 0
-    local reason = ""
 
-    -- Базовая логика: если нет dribble и нет cooldown — tackle сразу
-    if not isDribbling and not inCooldown then
-        shouldTackle = true
-        reason = "Direct"
-    end
-
-    -- Mode-специфичная логика
     if mode == "None" then
-        shouldTackle = true
-        reason = "None"
+        shouldTackleFromMode = true
+        modeReason = "None"
     elseif mode == "OnlyDribble" then
         if isDribbling then
-            shouldTackle = true
-            reason = "Dribbling"
-        else
-            shouldTackle = false
-            reason = "NoDribble"
-        end
-    elseif mode == "Dribble" then
-        if isDribbling then
-            shouldTackle = true
-            reason = "Dribbling"
-        elseif inCooldown or (not state.DelayTriggered) then
-            -- Delay логика
-            if AutoTackleConfig.DribbleDelay == "Delay" then
-                if timeSinceEnd >= AutoTackleConfig.DribbleDelayTime then
+            shouldTackleFromMode = true
+            modeReason = "Dribbling"
+        elseif inCooldown then
+            if state.DelayTriggered then
+                shouldTackleFromMode = true
+                modeReason = "Cooldown"
+            else
+                if AutoTackleConfig.DribbleDelay == "Smart" then
+                    -- Smart: ждет конца анимации (немедленно после обнаружения конца)
                     state.DelayTriggered = true
-                    shouldTackle = true
-                    reason = "DelayEnd"
-                else
-                    waitTime = AutoTackleConfig.DribbleDelayTime - timeSinceEnd
-                    reason = "DelayWait"
-                end
-            elseif AutoTackleConfig.DribbleDelay == "Smart" then
-                if tick() >= state.CooldownUntil then
-                    state.DelayTriggered = true
-                    shouldTackle = true
-                    reason = "SmartEnd"
-                else
-                    waitTime = state.CooldownUntil - tick()
-                    reason = "SmartWait"
+                    shouldTackleFromMode = true
+                    modeReason = "SmartEnd"
+                else -- Delay
+                    if timeSinceEnd >= AutoTackleConfig.DribbleDelayTime then
+                        state.DelayTriggered = true
+                        shouldTackleFromMode = true
+                        modeReason = "DelayEnd"
+                    else
+                        shouldTackleFromMode = false
+                        waitTime = AutoTackleConfig.DribbleDelayTime - timeSinceEnd
+                        modeReason = "DelayWait"
+                    end
                 end
             end
-        else
-            shouldTackle = true
-            reason = "PostDelay"
+        end
+    elseif mode == "Dribble" then
+        shouldTackleFromMode = true
+        modeReason = "Dribble"
+        if inCooldown then
+            if state.DelayTriggered then
+                -- ok
+            else
+                if AutoTackleConfig.DribbleDelay == "Smart" then
+                    -- Smart: ждет конца анимации
+                    state.DelayTriggered = true
+                else -- Delay
+                    if timeSinceEnd >= AutoTackleConfig.DribbleDelayTime then
+                        state.DelayTriggered = true
+                    else
+                        shouldTackleFromMode = false
+                        waitTime = AutoTackleConfig.DribbleDelayTime - timeSinceEnd
+                        modeReason = "DribbleDelay"
+                    end
+                end
+            end
         end
     end
 
-    -- EagleEye delay (если shouldTackle true и mode не None)
-    if shouldTackle and waitTime <= 0 and mode ~= "None" then
+    local shouldTackle = powerShooting or shouldTackleFromMode
+    local reason = powerShooting and "PowerShooting" or modeReason
+
+    -- Применение EagleEye delay только если не PowerShooting и режим требует (Dribble или None)
+    local applyEagleDelay = shouldTackle and not powerShooting and (mode == "Dribble" or mode == "None")
+    if applyEagleDelay then
         if not EagleEyeWaitStart then
             waitTime = AutoTackleConfig.EagleEyeMinDelay + math.random() * (AutoTackleConfig.EagleEyeMaxDelay - AutoTackleConfig.EagleEyeMinDelay)
             EagleEyeWaitStart = os.clock()
@@ -541,6 +530,13 @@ local function EagleEye(ball, owner)
                 waitTime = EagleEyeWaitTime - elapsed
             end
         end
+    else
+        EagleEyeWaitStart = nil  -- сброс если не применяется
+    end
+
+    -- Учет waitTime от DribbleDelay (приоритет выше EagleEye)
+    if waitTime > 0 and not powerShooting then
+        shouldTackle = false
     end
 
     if AutoTackleStatus.DebugText then
@@ -555,14 +551,13 @@ local function EagleEye(ball, owner)
 
     UpdateTargetRing(ball, distance)
 
-    if shouldTackle and waitTime <= 0 then
+    if shouldTackle then
         local canTackle, _, _, _ = CanTackle()
         if canTackle then
             PerformTackle(ball, owner)
-            if reason ~= "PostDelay" then  -- Сброс delay только если не в post-delay
-                state.DelayTriggered = false
+            if not powerShooting and reason ~= "Cooldown" then
+                EagleEyeWaitStart = nil
             end
-            EagleEyeWaitStart = nil
         end
     end
 end
@@ -670,7 +665,6 @@ AutoDribble.Stop = function()
     for _, v in pairs(DribbleGui) do if v.Remove then v:Remove() end end
 end
 
-
 -- === UI ИНТЕГРАЦИЯ ===
 local uiElements = {}
 local AutoTackleDribbleModule = {}
@@ -727,6 +721,12 @@ function AutoTackleDribbleModule.Init(UI, coreParam, notifyFunc)
         }, "AutoTackleOptimalMax")
         
         UI.Sections.AutoTackle:Divider()
+        uiElements.AutoTackleMaxAngle = UI.Sections.AutoTackle:Slider({ 
+            Name = "Max Angle", 
+            Minimum = 0, Maximum = 360, Default = AutoTackleConfig.MaxAngle, Precision = 0,
+            Callback = function(v) AutoTackleConfig.MaxAngle = v end 
+        }, "AutoTackleMaxAngle")
+        
         uiElements.AutoTackleTackleSpeed = UI.Sections.AutoTackle:Slider({ 
             Name = "Tackle Speed", 
             Minimum = 30, Maximum = 70, Default = AutoTackleConfig.TackleSpeed, Precision = 1,
@@ -763,7 +763,7 @@ function AutoTackleDribbleModule.Init(UI, coreParam, notifyFunc)
         UI.Sections.AutoTackle:Divider()
         uiElements.AutoTackleEagleEyeExceptions = UI.Sections.AutoTackle:Dropdown({ 
             Name = "EagleEye Exceptions", 
-            Options = {"None", "OnlyDribble", "Dribble", "Dribble&Tackle"}, 
+            Options = {"None", "OnlyDribble", "Dribble"}, 
             Default = AutoTackleConfig.EagleEyeExceptions,
             Callback = function(v) AutoTackleConfig.EagleEyeExceptions = v end 
         }, "AutoTackleEagleEyeExceptions")
@@ -845,6 +845,12 @@ function AutoTackleDribbleModule.Init(UI, coreParam, notifyFunc)
             Callback = function(v) AutoDribbleConfig.MaxAngle = v end 
         }, "AutoDribbleMaxAngle")
         
+        uiElements.AutoDribbleMaxPredictionAngle = UI.Sections.AutoDribble:Slider({ 
+            Name = "Max Prediction Angle", 
+            Minimum = 0, Maximum = 90, Default = AutoDribbleConfig.MaxPredictionAngle, Precision = 1,
+            Callback = function(v) AutoDribbleConfig.MaxPredictionAngle = v end 
+        }, "AutoDribbleMaxPredictionAngle")
+        
         uiElements.AutoDribbleTacklePredictionTime = UI.Sections.AutoDribble:Slider({ 
             Name = "Tackle Prediction Time", 
             Minimum = 0.1, Maximum = 1.0, Default = AutoDribbleConfig.TacklePredictionTime, Precision = 2,
@@ -884,6 +890,7 @@ function AutoTackleDribbleModule.Init(UI, coreParam, notifyFunc)
                 AutoTackleConfig.TackleDistance = uiElements.AutoTackleTackleDistance:GetValue()
                 AutoTackleConfig.OptimalDistanceMin = uiElements.AutoTackleOptimalMin:GetValue()
                 AutoTackleConfig.OptimalDistanceMax = uiElements.AutoTackleOptimalMax:GetValue()
+                AutoTackleConfig.MaxAngle = uiElements.AutoTackleMaxAngle:GetValue()
                 AutoTackleConfig.TackleSpeed = uiElements.AutoTackleTackleSpeed:GetValue()
                 AutoTackleConfig.PredictionTime = uiElements.AutoTacklePredictionTime:GetValue()
                 AutoTackleConfig.OnlyPlayer = uiElements.AutoTackleOnlyPlayer:GetState()
@@ -903,6 +910,7 @@ function AutoTackleDribbleModule.Init(UI, coreParam, notifyFunc)
                 AutoDribbleConfig.MaxDribbleDistance = uiElements.AutoDribbleMaxDistance:GetValue()
                 AutoDribbleConfig.DribbleActivationDistance = uiElements.AutoDribbleActivationDistance:GetValue()
                 AutoDribbleConfig.MaxAngle = uiElements.AutoDribbleMaxAngle:GetValue()
+                AutoDribbleConfig.MaxPredictionAngle = uiElements.AutoDribbleMaxPredictionAngle:GetValue()
                 AutoDribbleConfig.TacklePredictionTime = uiElements.AutoDribbleTacklePredictionTime:GetValue()
                 AutoDribbleConfig.TackleAngleThreshold = uiElements.AutoDribbleTackleAngleThreshold:GetValue()
                 AutoDribbleConfig.TextPosition.X = uiElements.DribbleTextX:GetValue()
