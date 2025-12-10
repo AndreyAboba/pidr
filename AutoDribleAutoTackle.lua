@@ -1,4 +1,4 @@
--- [v2.1] AUTO DRIBBLE + AUTO TACKLE + FULL GUI + UI INTEGRATION (ИСПРАВЛЕННАЯ ВЕРСИЯ)
+-- [v2.2] AUTO DRIBBLE + AUTO TACKLE + FULL GUI + UI INTEGRATION (С MANUAL BUTTON)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -44,7 +44,9 @@ local AutoTackleConfig = {
     EagleEyeMaxDelay = 0.6,
     ManualTackleEnabled = true,
     ManualTackleKeybind = Enum.KeyCode.Q,
-    ManualTackleCooldown = 0.5
+    ManualTackleCooldown = 0.5,
+    ManualButton = false,
+    ButtonScale = 1.0
 }
 
 local AutoDribbleConfig = {
@@ -72,7 +74,12 @@ local AutoTackleStatus = {
     HeartbeatConnection = nil,
     RenderConnection = nil,
     InputConnection = nil,
-    DebugConnection = nil
+    DebugConnection = nil,
+    ButtonGui = nil,
+    TouchStartTime = 0,
+    Dragging = false,
+    DragStart = Vector2.new(0, 0),
+    StartPos = UDim2.new(0, 0, 0, 0)
 }
 local AutoDribbleStatus = {
     Running = false,
@@ -236,6 +243,93 @@ local function CleanupDebugText()
         Gui.DribbleTargetLabel.Text = "Targets: 0"
         Gui.DribbleTacklingLabel.Text = "Nearest: None"
         Gui.AutoDribbleLabel.Text = "AutoDribble: Idle"
+    end
+end
+
+-- === MANUAL TACKLE BUTTON ===
+local function SetupManualTackleButton()
+    if AutoTackleStatus.ButtonGui then AutoTackleStatus.ButtonGui:Destroy() end
+    
+    local buttonGui = Instance.new("ScreenGui")
+    buttonGui.Name = "ManualTackleButtonGui"
+    buttonGui.ResetOnSpawn = false
+    buttonGui.IgnoreGuiInset = false
+    buttonGui.Parent = game:GetService("CoreGui")
+    
+    local size = 50 * AutoTackleConfig.ButtonScale
+    local screenSize = Camera.ViewportSize
+    local initialX = screenSize.X / 2 - size / 2
+    local initialY = screenSize.Y * 0.7
+    
+    local buttonFrame = Instance.new("Frame")
+    buttonFrame.Size = UDim2.new(0, size, 0, size)
+    buttonFrame.Position = UDim2.new(0, initialX, 0, initialY)
+    buttonFrame.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+    buttonFrame.BackgroundTransparency = 0.3
+    buttonFrame.BorderSizePixel = 0
+    buttonFrame.Visible = AutoTackleConfig.ManualButton
+    buttonFrame.Parent = buttonGui
+    
+    Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0.5, 0)
+    
+    local buttonIcon = Instance.new("ImageLabel")
+    buttonIcon.Size = UDim2.new(0, size*0.6, 0, size*0.6)
+    buttonIcon.Position = UDim2.new(0.5, -size*0.3, 0.5, -size*0.3)
+    buttonIcon.BackgroundTransparency = 1
+    buttonIcon.Image = "rbxassetid://14317040670"
+    buttonIcon.Parent = buttonFrame
+    
+    -- Логика перетаскивания
+    buttonFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            AutoTackleStatus.TouchStartTime = tick()
+            local mousePos = input.UserInputType == Enum.UserInputType.Touch and Vector2.new(input.Position.X, input.Position.Y) or UserInputService:GetMouseLocation()
+            AutoTackleStatus.Dragging = true
+            AutoTackleStatus.DragStart = mousePos
+            AutoTackleStatus.StartPos = buttonFrame.Position
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and AutoTackleStatus.Dragging then
+            local mousePos = input.UserInputType == Enum.UserInputType.Touch and Vector2.new(input.Position.X, input.Position.Y) or UserInputService:GetMouseLocation()
+            local delta = mousePos - AutoTackleStatus.DragStart
+            buttonFrame.Position = UDim2.new(AutoTackleStatus.StartPos.X.Scale, AutoTackleStatus.StartPos.X.Offset + delta.X, AutoTackleStatus.StartPos.Y.Scale, AutoTackleStatus.StartPos.Y.Offset + delta.Y)
+        end
+    end)
+    
+    buttonFrame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            AutoTackleStatus.Dragging = false
+            
+            if AutoTackleStatus.TouchStartTime > 0 and tick() - AutoTackleStatus.TouchStartTime < 0.2 then
+                ManualTackleAction()
+            end
+            
+            AutoTackleStatus.TouchStartTime = 0
+        end
+    end)
+    
+    AutoTackleStatus.ButtonGui = buttonGui
+end
+
+local function ToggleManualTackleButton(value)
+    AutoTackleConfig.ManualButton = value
+    
+    if value then
+        SetupManualTackleButton()
+    else
+        if AutoTackleStatus.ButtonGui then 
+            AutoTackleStatus.ButtonGui:Destroy() 
+            AutoTackleStatus.ButtonGui = nil 
+        end
+    end
+end
+
+local function SetTackleButtonScale(value)
+    AutoTackleConfig.ButtonScale = value
+    if AutoTackleConfig.ManualButton then 
+        SetupManualTackleButton() 
     end
 end
 
@@ -1043,7 +1137,7 @@ AutoTackle.Start = function()
         end)
     end)
     
-    -- Обработчик ручного такла
+    -- Обработчик ручного такла по клавише
     AutoTackleStatus.InputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
         if not AutoTackleConfig.Enabled then return end
@@ -1055,6 +1149,11 @@ AutoTackle.Start = function()
             ManualTackleAction()
         end
     end)
+    
+    -- Настройка кнопки Manual Tackle
+    if AutoTackleConfig.ManualButton then 
+        SetupManualTackleButton() 
+    end
     
     -- Настройка перемещения debug текста
     if DebugConfig.MoveEnabled then
@@ -1074,6 +1173,11 @@ AutoTackle.Stop = function()
     
     CleanupDebugText()
     UpdateDebugVisibility()
+    
+    if AutoTackleStatus.ButtonGui then 
+        AutoTackleStatus.ButtonGui:Destroy() 
+        AutoTackleStatus.ButtonGui = nil 
+    end
     
     notify("AutoTackle", "Stopped", true)
 end
@@ -1299,9 +1403,26 @@ local function SetupUI(UI)
         }, "AutoTackleManualTackleCooldown")
         
         UI.Sections.AutoTackle:Divider()
+        
+        uiElements.AutoTackleManualButton = UI.Sections.AutoTackle:Toggle({
+            Name = "Manual Button",
+            Default = AutoTackleConfig.ManualButton,
+            Callback = ToggleManualTackleButton
+        }, "AutoTackleManualButton")
+        
+        uiElements.AutoTackleButtonScale = UI.Sections.AutoTackle:Slider({
+            Name = "Button Scale",
+            Minimum = 0.5,
+            Maximum = 2.0,
+            Default = AutoTackleConfig.ButtonScale,
+            Precision = 2,
+            Callback = SetTackleButtonScale
+        }, "AutoTackleButtonScale")
+        
+        UI.Sections.AutoTackle:Divider()
         UI.Sections.AutoTackle:Paragraph({
             Header = "Information",
-            Body = "OnlyDribble: Tackle when enemy dribble is on cooldown\nEagleEye: Random delay + dribble cooldown tracking\nManualTackle: Only tackle when you press the key"
+            Body = "OnlyDribble: Tackle when enemy dribble is on cooldown\nEagleEye: Random delay + dribble cooldown tracking\nManualTackle: Only tackle when you press the key\nManual Button: On-screen button for mobile/touch devices"
         })
     end
     
@@ -1443,6 +1564,8 @@ local function SetupUI(UI)
         AutoTackleConfig.ManualTackleEnabled = uiElements.AutoTackleManualTackleEnabled:GetState()
         AutoTackleConfig.ManualTackleKeybind = uiElements.AutoTackleManualTackleKeybind:GetBind()
         AutoTackleConfig.ManualTackleCooldown = uiElements.AutoTackleManualTackleCooldown:GetValue()
+        AutoTackleConfig.ManualButton = uiElements.AutoTackleManualButton:GetState()
+        AutoTackleConfig.ButtonScale = uiElements.AutoTackleButtonScale:GetValue()
         
         AutoDribbleConfig.Enabled = uiElements.AutoDribbleEnabled:GetState()
         AutoDribbleConfig.MaxDribbleDistance = uiElements.AutoDribbleMaxDistance:GetValue()
@@ -1459,6 +1582,8 @@ local function SetupUI(UI)
         if Gui then
             Gui.ModeLabel.Text = "Mode: " .. AutoTackleConfig.Mode
         end
+        
+        ToggleManualTackleButton(AutoTackleConfig.ManualButton)
         
         if AutoTackleConfig.Enabled then
             if not AutoTackleStatus.Running then
