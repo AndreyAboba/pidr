@@ -1433,7 +1433,7 @@ local function SetupUI(UI)
         UI.Sections.AutoTackle:Divider()
         UI.Sections.AutoTackle:Paragraph({
             Header = "Information",
-            Body = "OnlyDribble: Tackle when enemy dribble is on cooldown\nEagleEye: Random delay + dribble cooldown tracking\nManualTackle: Only tackle when you press the key\nManual Button: On-screen button for mobile/touch devices"
+            Body = "OnlyDribble: Tackle when enemy dribble is on cooldown\nEagleEye: Random delay + dribble cooldown tracking\nManualTackle: Only tackle when you press the key\n TackleDistance - the distance at which the tackle is immediately used\nPrediction Time - how long will the trajectory take to predict\nEagleEye Delays - random delay from min to max"
         })
     end
     
@@ -1524,13 +1524,15 @@ local function SetupUI(UI)
         UI.Sections.AutoDribble:Divider()
         UI.Sections.AutoDribble:Paragraph({
             Header = "Information",
-            Body = "AutoDribble: Automatically use Deke when enemy is using specific tackle animation"
+            Body = "AutoDribble: Automatically use dribble when enemy is using tackle"
         })
     end
     
     -- Секция Debug
     if UI.Sections.Debug then
-        UI.Sections.Debug:Header({ Name = "Debug Settings" })
+        wait(1)
+        UI.Sections.Debug:Header({ Name = "Debug" })
+        UI.Sections.Debug:SubLabel({Text = '* Only for AutoDribble/AutoTackle'})
         UI.Sections.Debug:Divider()
         
         uiElements.DebugEnabled = UI.Sections.Debug:Toggle({
@@ -1559,7 +1561,6 @@ local function SetupUI(UI)
     syncSection:Header({ Name = "AutoDribble/AutoTackle" })
     syncSection:Button({ Name = "Sync Config", Callback = function()
         AutoTackleConfig.Enabled = uiElements.AutoTackleEnabled:GetState()
-        AutoTackleConfig.Mode = uiElements.AutoTackleMode:GetValue()
         AutoTackleConfig.MaxDistance = uiElements.AutoTackleMaxDistance:GetValue()
         AutoTackleConfig.TackleDistance = uiElements.AutoTackleTackleDistance:GetValue()
         AutoTackleConfig.OptimalDistanceMin = uiElements.AutoTackleOptimalDistanceMin:GetValue()
@@ -1567,8 +1568,6 @@ local function SetupUI(UI)
         AutoTackleConfig.TackleSpeed = uiElements.AutoTackleTackleSpeed:GetValue()
         AutoTackleConfig.PredictionTime = uiElements.AutoTacklePredictionTime:GetValue()
         AutoTackleConfig.OnlyPlayer = uiElements.AutoTackleOnlyPlayer:GetState()
-        AutoTackleConfig.RotationMethod = uiElements.AutoTackleRotationMethod:GetValue()
-        AutoTackleConfig.RotationType = uiElements.AutoTackleRotationType:GetValue()
         AutoTackleConfig.DribbleDelayTime = uiElements.AutoTackleDribbleDelayTime:GetValue()
         AutoTackleConfig.EagleEyeMinDelay = uiElements.AutoTackleEagleEyeMinDelay:GetValue()
         AutoTackleConfig.EagleEyeMaxDelay = uiElements.AutoTackleEagleEyeMaxDelay:GetValue()
