@@ -1,4 +1,4 @@
--- [v2.0] AUTO DRIBBLE + AUTO TACKLE + FULL GUI + UI INTEGRATION
+-- [v2.1] AUTO DRIBBLE + AUTO TACKLE + FULL GUI + UI INTEGRATION (ИСПРАВЛЕННАЯ ВЕРСИЯ)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -58,17 +58,26 @@ local AutoDribbleConfig = {
     TackleAngleThreshold = 0.7
 }
 
+-- === DEBUG CONFIG ===
+local DebugConfig = {
+    Enabled = true,
+    MoveEnabled = false,
+    Position = Vector2.new(0.5, 0.5)
+}
+
 -- === STATES ===
 local AutoTackleStatus = {
     Running = false,
     Connection = nil,
     HeartbeatConnection = nil,
     RenderConnection = nil,
-    InputConnection = nil
+    InputConnection = nil,
+    DebugConnection = nil
 }
 local AutoDribbleStatus = {
     Running = false,
-    Connection = nil
+    Connection = nil,
+    DebugConnection = nil
 }
 
 -- === SHARED STATES ===
@@ -103,7 +112,11 @@ local function SetupGUI()
         ModeLabel = Drawing.new("Text"),
         ManualTackleLabel = Drawing.new("Text"),
         TargetRingLines = {},
-        TargetRings = {}
+        TargetRings = {},
+        
+        -- Раздельные контейнеры для отключения
+        TackleDebugLabels = {},
+        DribbleDebugLabels = {}
     }
     
     local screenSize = Camera.ViewportSize
@@ -112,19 +125,20 @@ local function SetupGUI()
     local offsetTackleY = tackleY + 30
     local offsetDribbleY = tackleY - 50
     
-    local textLabels = {
+    -- Текстовые метки AutoTackle
+    local tackleLabels = {
         Gui.TackleWaitLabel, Gui.TackleTargetLabel, Gui.TackleDribblingLabel,
-        Gui.TackleTacklingLabel, Gui.EagleEyeLabel, Gui.DribbleStatusLabel,
-        Gui.DribbleTargetLabel, Gui.DribbleTacklingLabel, Gui.AutoDribbleLabel,
-        Gui.CooldownListLabel, Gui.ModeLabel, Gui.ManualTackleLabel
+        Gui.TackleTacklingLabel, Gui.EagleEyeLabel, Gui.CooldownListLabel,
+        Gui.ModeLabel, Gui.ManualTackleLabel
     }
     
-    for _, label in ipairs(textLabels) do
+    for _, label in ipairs(tackleLabels) do
         label.Size = 16
         label.Color = Color3.fromRGB(255, 255, 255)
         label.Outline = true
         label.Center = true
-        label.Visible = true
+        label.Visible = DebugConfig.Enabled and AutoTackleConfig.Enabled
+        table.insert(Gui.TackleDebugLabels, label)
     end
     
     Gui.TackleWaitLabel.Color = Color3.fromRGB(255, 165, 0)
@@ -136,6 +150,21 @@ local function SetupGUI()
     Gui.CooldownListLabel.Position = Vector2.new(centerX, offsetTackleY); offsetTackleY += 15
     Gui.ModeLabel.Position = Vector2.new(centerX, offsetTackleY); offsetTackleY += 15
     Gui.ManualTackleLabel.Position = Vector2.new(centerX, offsetTackleY)
+    
+    -- Текстовые метки AutoDribble
+    local dribbleLabels = {
+        Gui.DribbleStatusLabel, Gui.DribbleTargetLabel,
+        Gui.DribbleTacklingLabel, Gui.AutoDribbleLabel
+    }
+    
+    for _, label in ipairs(dribbleLabels) do
+        label.Size = 16
+        label.Color = Color3.fromRGB(255, 255, 255)
+        label.Outline = true
+        label.Center = true
+        label.Visible = DebugConfig.Enabled and AutoDribbleConfig.Enabled
+        table.insert(Gui.DribbleDebugLabels, label)
+    end
     
     Gui.DribbleStatusLabel.Position = Vector2.new(centerX, offsetDribbleY); offsetDribbleY += 15
     Gui.DribbleTargetLabel.Position = Vector2.new(centerX, offsetDribbleY); offsetDribbleY += 15
@@ -164,12 +193,49 @@ local function SetupGUI()
     end
 end
 
-local function ToggleGUI(value)
+local function UpdateDebugVisibility()
     if not Gui then return end
-    for _, label in pairs(Gui) do
-        if type(label) == "table" and label.Visible ~= nil then
-            label.Visible = value
+    
+    -- Обновляем видимость меток AutoTackle
+    local tackleVisible = DebugConfig.Enabled and AutoTackleConfig.Enabled
+    for _, label in ipairs(Gui.TackleDebugLabels) do
+        label.Visible = tackleVisible
+    end
+    
+    -- Обновляем видимость меток AutoDribble
+    local dribbleVisible = DebugConfig.Enabled and AutoDribbleConfig.Enabled
+    for _, label in ipairs(Gui.DribbleDebugLabels) do
+        label.Visible = dribbleVisible
+    end
+    
+    -- Обновляем кольца цели
+    if not AutoTackleConfig.Enabled then
+        for _, line in ipairs(Gui.TargetRingLines) do
+            line.Visible = false
         end
+    end
+end
+
+local function CleanupDebugText()
+    if not Gui then return end
+    
+    -- Очищаем текст меток AutoTackle при выключении
+    if not AutoTackleConfig.Enabled then
+        Gui.TackleWaitLabel.Text = "Wait: 0.00"
+        Gui.TackleTargetLabel.Text = "Target: None"
+        Gui.TackleDribblingLabel.Text = "isDribbling: false"
+        Gui.TackleTacklingLabel.Text = "isTackling: false"
+        Gui.EagleEyeLabel.Text = "EagleEye: Idle"
+        Gui.ManualTackleLabel.Text = "ManualTackle: Ready [" .. tostring(AutoTackleConfig.ManualTackleKeybind) .. "]"
+        Gui.ModeLabel.Text = "Mode: " .. AutoTackleConfig.Mode
+    end
+    
+    -- Очищаем текст меток AutoDribble при выключении
+    if not AutoDribbleConfig.Enabled then
+        Gui.DribbleStatusLabel.Text = "Dribble: Ready"
+        Gui.DribbleTargetLabel.Text = "Targets: 0"
+        Gui.DribbleTacklingLabel.Text = "Nearest: None"
+        Gui.AutoDribbleLabel.Text = "AutoDribble: Idle"
     end
 end
 
@@ -225,6 +291,8 @@ end
 local function UpdateTargetRing(ball, distance)
     for _, line in ipairs(Gui.TargetRingLines) do line.Visible = false end
     if not ball or not ball.Parent then return end
+    if not AutoTackleConfig.Enabled then return end
+    
     local center = ball.Position - Vector3.new(0, 0.5, 0)
     local radius = 2
     local segments = #Gui.TargetRingLines
@@ -258,6 +326,9 @@ local function UpdateTargetRings()
     for player, ring in pairs(Gui.TargetRings) do
         for _, line in ipairs(ring) do line.Visible = false end
     end
+    
+    if not AutoDribbleConfig.Enabled then return end
+    
     for player, data in pairs(PrecomputedPlayers) do
         if not data.IsValid or not TackleStates[player].IsTackling then continue end
         local targetRoot = data.RootPart
@@ -385,7 +456,7 @@ local function UpdateDribbleStates()
         EagleEyeTimers[player] = nil
     end
     
-    if Gui then
+    if Gui and AutoTackleConfig.Enabled then
         Gui.CooldownListLabel.Text = "CooldownList: " .. tostring(table.count(DribbleCooldownList))
     end
 end
@@ -403,7 +474,7 @@ local function PrecomputePlayers()
     local bools = Workspace:FindFirstChild(LocalPlayer.Name) and Workspace[LocalPlayer.Name]:FindFirstChild("Bools")
     if bools then
         CanDribbleNow = not bools.dribbleDebounce.Value
-        if Gui then
+        if Gui and AutoDribbleConfig.Enabled then
             Gui.DribbleStatusLabel.Text = bools.dribbleDebounce.Value and "Dribble: Cooldown" or "Dribble: Ready"
             Gui.DribbleStatusLabel.Color = bools.dribbleDebounce.Value and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
         end
@@ -509,7 +580,7 @@ local function PerformDribble()
     local bools = Workspace:FindFirstChild(LocalPlayer.Name) and Workspace[LocalPlayer.Name]:FindFirstChild("Bools")
     if not bools or bools.dribbleDebounce.Value then return end
     pcall(function() ActionRemote:FireServer("Deke") end)
-    if Gui then
+    if Gui and AutoDribbleConfig.Enabled then
         Gui.DribbleStatusLabel.Text = "Dribble: Cooldown"
         Gui.DribbleStatusLabel.Color = Color3.fromRGB(255, 0, 0)
         Gui.AutoDribbleLabel.Text = "AutoDribble: DEKE (Slide Tackle!)"
@@ -545,25 +616,25 @@ local function ManualTackleAction()
     if canTackle then
         LastManualTackleTime = currentTime
         PerformTackle(ball, owner)
-        if Gui then
+        if Gui and AutoTackleConfig.Enabled then
             Gui.ManualTackleLabel.Text = "ManualTackle: EXECUTED! [" .. tostring(AutoTackleConfig.ManualTackleKeybind) .. "]"
             Gui.ManualTackleLabel.Color = Color3.fromRGB(0, 255, 0)
         end
         
         task.delay(0.3, function()
-            if Gui then
+            if Gui and AutoTackleConfig.Enabled then
                 Gui.ManualTackleLabel.Color = Color3.fromRGB(255, 255, 255)
             end
         end)
         return true
     else
-        if Gui then
+        if Gui and AutoTackleConfig.Enabled then
             Gui.ManualTackleLabel.Text = "ManualTackle: FAILED [" .. tostring(AutoTackleConfig.ManualTackleKeybind) .. "]"
             Gui.ManualTackleLabel.Color = Color3.fromRGB(255, 0, 0)
         end
         
         task.delay(0.3, function()
-            if Gui then
+            if Gui and AutoTackleConfig.Enabled then
                 Gui.ManualTackleLabel.Color = Color3.fromRGB(255, 255, 255)
             end
         end)
@@ -685,13 +756,13 @@ local function ProcessManualTackleMode(owner, ball)
     local canTackle, _, distance, _ = CanTackle()
     
     if canTackle then
-        if Gui then
+        if Gui and AutoTackleConfig.Enabled then
             Gui.ManualTackleLabel.Text = "ManualTackle: READY [" .. tostring(AutoTackleConfig.ManualTackleKeybind) .. "]"
             Gui.ManualTackleLabel.Color = Color3.fromRGB(0, 255, 0)
         end
         return false, 0, "Ready - Press " .. tostring(AutoTackleConfig.ManualTackleKeybind)
     else
-        if Gui then
+        if Gui and AutoTackleConfig.Enabled then
             Gui.ManualTackleLabel.Text = "ManualTackle: NOT READY [" .. tostring(AutoTackleConfig.ManualTackleKeybind) .. "]"
             Gui.ManualTackleLabel.Color = Color3.fromRGB(255, 0, 0)
         end
@@ -701,7 +772,7 @@ end
 
 local function ProcessTackle(ball, owner)
     if not owner or not owner.Character or not ball then
-        if Gui then
+        if Gui and AutoTackleConfig.Enabled then
             Gui.TackleTargetLabel.Text = "Target: None"
             Gui.TackleDribblingLabel.Text = "isDribbling: false"
             Gui.TackleTacklingLabel.Text = "isTackling: false"
@@ -733,7 +804,7 @@ local function ProcessTackle(ball, owner)
     local isDribbling = state.IsDribbling
     local isTacklingNow = IsSpecificTackle(owner)
 
-    if Gui then
+    if Gui and AutoTackleConfig.Enabled then
         Gui.TackleTargetLabel.Text = "Target: " .. owner.Name
         Gui.TackleDribblingLabel.Text = "isDribbling: " .. tostring(isDribbling)
         Gui.TackleTacklingLabel.Text = "isTackling: " .. tostring(isTacklingNow)
@@ -754,12 +825,12 @@ local function ProcessTackle(ball, owner)
     end
     
     if waitTime > 0 and waitTime < 999 then
-        if Gui then
+        if Gui and AutoTackleConfig.Enabled then
             Gui.TackleWaitLabel.Text = string.format("Wait: %.2f", waitTime)
             Gui.EagleEyeLabel.Text = "Status: " .. reason
         end
     else
-        if Gui then
+        if Gui and AutoTackleConfig.Enabled then
             Gui.TackleWaitLabel.Text = "Wait: 0.00"
             Gui.EagleEyeLabel.Text = "Status: " .. reason
         end
@@ -779,13 +850,156 @@ local function ProcessTackle(ball, owner)
     return false
 end
 
+-- === ФУНКЦИИ ДЛЯ ПЕРЕМЕЩЕНИЯ DEBUG ТЕКСТА ===
+local function SetupDebugMovement()
+    if not DebugConfig.MoveEnabled or not Gui then return end
+    
+    local isDragging = false
+    local dragStart = Vector2.new(0, 0)
+    local startPositions = {}
+    
+    -- Сохраняем начальные позиции всех меток
+    for _, label in ipairs(Gui.TackleDebugLabels) do
+        startPositions[label] = label.Position
+    end
+    for _, label in ipairs(Gui.DribbleDebugLabels) do
+        startPositions[label] = label.Position
+    end
+    
+    local function updateAllPositions(delta)
+        for label, startPos in pairs(startPositions) do
+            if label.Visible then
+                label.Position = startPos + delta
+            end
+        end
+    end
+    
+    -- Обработчик для ПК
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if not DebugConfig.MoveEnabled then return end
+        
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            local mousePos = UserInputService:GetMouseLocation()
+            
+            -- Проверяем, кликнули ли по любой видимой метке
+            for label, startPos in pairs(startPositions) do
+                if label.Visible then
+                    local pos = label.Position
+                    local textBounds = Vector2.new(label.TextBounds.X, label.TextBounds.Y)
+                    local rect = {
+                        x1 = pos.X - textBounds.X/2,
+                        y1 = pos.Y - textBounds.Y/2,
+                        x2 = pos.X + textBounds.X/2,
+                        y2 = pos.Y + textBounds.Y/2
+                    }
+                    
+                    if mousePos.X >= rect.x1 and mousePos.X <= rect.x2 and
+                       mousePos.Y >= rect.y1 and mousePos.Y <= rect.y2 then
+                        isDragging = true
+                        dragStart = mousePos
+                        break
+                    end
+                end
+            end
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if not DebugConfig.MoveEnabled then return end
+        if not isDragging then return end
+        
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            local mousePos = UserInputService:GetMouseLocation()
+            local delta = mousePos - dragStart
+            updateAllPositions(delta)
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if not DebugConfig.MoveEnabled then return end
+        
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if isDragging then
+                local mousePos = UserInputService:GetMouseLocation()
+                local delta = mousePos - dragStart
+                
+                -- Обновляем стартовые позиции
+                for label, startPos in pairs(startPositions) do
+                    startPositions[label] = startPos + delta
+                end
+                
+                DebugConfig.Position = DebugConfig.Position + Vector2.new(delta.X / Camera.ViewportSize.X, delta.Y / Camera.ViewportSize.Y)
+            end
+            isDragging = false
+        end
+    end)
+    
+    -- Обработчик для тач-устройств
+    UserInputService.TouchStarted:Connect(function(touch, gameProcessed)
+        if gameProcessed then return end
+        if not DebugConfig.MoveEnabled then return end
+        
+        local touchPos = touch.Position
+        
+        for label, startPos in pairs(startPositions) do
+            if label.Visible then
+                local pos = label.Position
+                local textBounds = Vector2.new(label.TextBounds.X, label.TextBounds.Y)
+                local rect = {
+                    x1 = pos.X - textBounds.X/2,
+                    y1 = pos.Y - textBounds.Y/2,
+                    x2 = pos.X + textBounds.X/2,
+                    y2 = pos.Y + textBounds.Y/2
+                }
+                
+                if touchPos.X >= rect.x1 and touchPos.X <= rect.x2 and
+                   touchPos.Y >= rect.y1 and touchPos.Y <= rect.y2 then
+                    isDragging = true
+                    dragStart = touchPos
+                    break
+                end
+            end
+        end
+    end)
+    
+    UserInputService.TouchMoved:Connect(function(touch, gameProcessed)
+        if gameProcessed then return end
+        if not DebugConfig.MoveEnabled then return end
+        if not isDragging then return end
+        
+        local touchPos = touch.Position
+        local delta = touchPos - dragStart
+        updateAllPositions(delta)
+    end)
+    
+    UserInputService.TouchEnded:Connect(function(touch, gameProcessed)
+        if gameProcessed then return end
+        if not DebugConfig.MoveEnabled then return end
+        
+        if isDragging then
+            local touchPos = touch.Position
+            local delta = touchPos - dragStart
+            
+            for label, startPos in pairs(startPositions) do
+                startPositions[label] = startPos + delta
+            end
+            
+            DebugConfig.Position = DebugConfig.Position + Vector2.new(delta.X / Camera.ViewportSize.X, delta.Y / Camera.ViewportSize.Y)
+        end
+        isDragging = false
+    end)
+end
+
 -- === AUTO TACKLE MODULE ===
 local AutoTackle = {}
 AutoTackle.Start = function()
     if AutoTackleStatus.Running then return end
     AutoTackleStatus.Running = true
     
-    SetupGUI()
+    if not Gui then SetupGUI() end
     
     -- Heartbeat для обновления состояний
     AutoTackleStatus.HeartbeatConnection = RunService.Heartbeat:Connect(function()
@@ -797,7 +1011,11 @@ AutoTackle.Start = function()
     
     -- Heartbeat для логики такла
     AutoTackleStatus.Connection = RunService.Heartbeat:Connect(function()
-        if not AutoTackleConfig.Enabled then return end
+        if not AutoTackleConfig.Enabled then 
+            CleanupDebugText()
+            UpdateDebugVisibility()
+            return 
+        end
         
         pcall(function()
             local canTackle, ball, distance, owner = CanTackle()
@@ -838,6 +1056,12 @@ AutoTackle.Start = function()
         end
     end)
     
+    -- Настройка перемещения debug текста
+    if DebugConfig.MoveEnabled then
+        SetupDebugMovement()
+    end
+    
+    UpdateDebugVisibility()
     notify("AutoTackle", "Started", true)
 end
 
@@ -848,14 +1072,8 @@ AutoTackle.Stop = function()
     if AutoTackleStatus.RenderConnection then AutoTackleStatus.RenderConnection:Disconnect(); AutoTackleStatus.RenderConnection = nil end
     AutoTackleStatus.Running = false
     
-    if Gui then
-        for _, v in pairs(Gui) do
-            if type(v) == "table" and v.Remove then
-                v:Remove()
-            end
-        end
-        Gui = nil
-    end
+    CleanupDebugText()
+    UpdateDebugVisibility()
     
     notify("AutoTackle", "Stopped", true)
 end
@@ -868,11 +1086,8 @@ AutoDribble.Start = function()
     
     AutoDribbleStatus.Connection = RunService.RenderStepped:Connect(function()
         if not AutoDribbleConfig.Enabled then
-            if Gui then
-                Gui.DribbleTargetLabel.Text = "Targets: 0"
-                Gui.DribbleTacklingLabel.Text = "Nearest: None"
-                Gui.AutoDribbleLabel.Text = "AutoDribble: Idle"
-            end
+            CleanupDebugText()
+            UpdateDebugVisibility()
             return
         end
 
@@ -906,12 +1121,16 @@ AutoDribble.Start = function()
         end)
     end)
     
+    UpdateDebugVisibility()
     notify("AutoDribble", "Started", true)
 end
 
 AutoDribble.Stop = function()
     if AutoDribbleStatus.Connection then AutoDribbleStatus.Connection:Disconnect(); AutoDribbleStatus.Connection = nil end
     AutoDribbleStatus.Running = false
+    
+    CleanupDebugText()
+    UpdateDebugVisibility()
     notify("AutoDribble", "Stopped", true)
 end
 
@@ -933,6 +1152,7 @@ local function SetupUI(UI)
                 else 
                     AutoTackle.Stop() 
                 end
+                UpdateDebugVisibility()
             end
         }, "AutoTackleEnabled")
         
@@ -958,6 +1178,33 @@ local function SetupUI(UI)
             Precision = 1,
             Callback = function(v) AutoTackleConfig.MaxDistance = v end
         }, "AutoTackleMaxDistance")
+        
+        uiElements.AutoTackleTackleDistance = UI.Sections.AutoTackle:Slider({
+            Name = "Tackle Distance",
+            Minimum = 0,
+            Maximum = 20,
+            Default = AutoTackleConfig.TackleDistance,
+            Precision = 1,
+            Callback = function(v) AutoTackleConfig.TackleDistance = v end
+        }, "AutoTackleTackleDistance")
+        
+        uiElements.AutoTackleOptimalDistanceMin = UI.Sections.AutoTackle:Slider({
+            Name = "Optimal Distance Min",
+            Minimum = 0,
+            Maximum = 30,
+            Default = AutoTackleConfig.OptimalDistanceMin,
+            Precision = 1,
+            Callback = function(v) AutoTackleConfig.OptimalDistanceMin = v end
+        }, "AutoTackleOptimalDistanceMin")
+        
+        uiElements.AutoTackleOptimalDistanceMax = UI.Sections.AutoTackle:Slider({
+            Name = "Optimal Distance Max",
+            Minimum = 5,
+            Maximum = 50,
+            Default = AutoTackleConfig.OptimalDistanceMax,
+            Precision = 1,
+            Callback = function(v) AutoTackleConfig.OptimalDistanceMax = v end
+        }, "AutoTackleOptimalDistanceMax")
         
         uiElements.AutoTackleTackleSpeed = UI.Sections.AutoTackle:Slider({
             Name = "Tackle Speed",
@@ -1073,6 +1320,7 @@ local function SetupUI(UI)
                 else 
                     AutoDribble.Stop() 
                 end
+                UpdateDebugVisibility()
             end
         }, "AutoDribbleEnabled")
         
@@ -1105,11 +1353,73 @@ local function SetupUI(UI)
             Callback = function(v) AutoDribbleConfig.PredictionTime = v end
         }, "AutoDribblePredictionTime")
         
+        uiElements.AutoDribbleMaxAngle = UI.Sections.AutoDribble:Slider({
+            Name = "Max Angle",
+            Minimum = 0,
+            Maximum = 360,
+            Default = AutoDribbleConfig.MaxAngle,
+            Precision = 0,
+            Callback = function(v) AutoDribbleConfig.MaxAngle = v end
+        }, "AutoDribbleMaxAngle")
+        
+        uiElements.AutoDribbleMaxPredictionAngle = UI.Sections.AutoDribble:Slider({
+            Name = "Max Prediction Angle",
+            Minimum = 0,
+            Maximum = 360,
+            Default = AutoDribbleConfig.MaxPredictionAngle,
+            Precision = 0,
+            Callback = function(v) AutoDribbleConfig.MaxPredictionAngle = v end
+        }, "AutoDribbleMaxPredictionAngle")
+        
+        uiElements.AutoDribbleTacklePredictionTime = UI.Sections.AutoDribble:Slider({
+            Name = "Tackle Prediction Time",
+            Minimum = 0.01,
+            Maximum = 1.0,
+            Default = AutoDribbleConfig.TacklePredictionTime,
+            Precision = 2,
+            Callback = function(v) AutoDribbleConfig.TacklePredictionTime = v end
+        }, "AutoDribbleTacklePredictionTime")
+        
+        uiElements.AutoDribbleTackleAngleThreshold = UI.Sections.AutoDribble:Slider({
+            Name = "Tackle Angle Threshold",
+            Minimum = 0.1,
+            Maximum = 1.0,
+            Default = AutoDribbleConfig.TackleAngleThreshold,
+            Precision = 2,
+            Callback = function(v) AutoDribbleConfig.TackleAngleThreshold = v end
+        }, "AutoDribbleTackleAngleThreshold")
+        
         UI.Sections.AutoDribble:Divider()
         UI.Sections.AutoDribble:Paragraph({
             Header = "Information",
             Body = "AutoDribble: Automatically use Deke when enemy is using specific tackle animation"
         })
+    end
+    
+    -- Секция Debug
+    if UI.Sections.Debug then
+        UI.Sections.Debug:Header({ Name = "Debug Settings" })
+        UI.Sections.Debug:Divider()
+        
+        uiElements.DebugEnabled = UI.Sections.Debug:Toggle({
+            Name = "Debug Text Enabled",
+            Default = DebugConfig.Enabled,
+            Callback = function(v)
+                DebugConfig.Enabled = v
+                UpdateDebugVisibility()
+            end
+        }, "DebugEnabled")
+        
+        uiElements.DebugMoveEnabled = UI.Sections.Debug:Toggle({
+            Name = "Move Debug Text",
+            Default = DebugConfig.MoveEnabled,
+            Callback = function(v)
+                DebugConfig.MoveEnabled = v
+                if v then
+                    SetupDebugMovement()
+                end
+            end
+        }, "DebugMoveEnabled")
     end
     
     -- Секция синхронизации
@@ -1119,6 +1429,9 @@ local function SetupUI(UI)
         AutoTackleConfig.Enabled = uiElements.AutoTackleEnabled:GetState()
         AutoTackleConfig.Mode = uiElements.AutoTackleMode:GetValue()
         AutoTackleConfig.MaxDistance = uiElements.AutoTackleMaxDistance:GetValue()
+        AutoTackleConfig.TackleDistance = uiElements.AutoTackleTackleDistance:GetValue()
+        AutoTackleConfig.OptimalDistanceMin = uiElements.AutoTackleOptimalDistanceMin:GetValue()
+        AutoTackleConfig.OptimalDistanceMax = uiElements.AutoTackleOptimalDistanceMax:GetValue()
         AutoTackleConfig.TackleSpeed = uiElements.AutoTackleTackleSpeed:GetValue()
         AutoTackleConfig.PredictionTime = uiElements.AutoTacklePredictionTime:GetValue()
         AutoTackleConfig.OnlyPlayer = uiElements.AutoTackleOnlyPlayer:GetState()
@@ -1135,6 +1448,13 @@ local function SetupUI(UI)
         AutoDribbleConfig.MaxDribbleDistance = uiElements.AutoDribbleMaxDistance:GetValue()
         AutoDribbleConfig.DribbleActivationDistance = uiElements.AutoDribbleActivationDistance:GetValue()
         AutoDribbleConfig.PredictionTime = uiElements.AutoDribblePredictionTime:GetValue()
+        AutoDribbleConfig.MaxAngle = uiElements.AutoDribbleMaxAngle:GetValue()
+        AutoDribbleConfig.MaxPredictionAngle = uiElements.AutoDribbleMaxPredictionAngle:GetValue()
+        AutoDribbleConfig.TacklePredictionTime = uiElements.AutoDribbleTacklePredictionTime:GetValue()
+        AutoDribbleConfig.TackleAngleThreshold = uiElements.AutoDribbleTackleAngleThreshold:GetValue()
+        
+        DebugConfig.Enabled = uiElements.DebugEnabled:GetState()
+        DebugConfig.MoveEnabled = uiElements.DebugMoveEnabled:GetState()
         
         if Gui then
             Gui.ModeLabel.Text = "Mode: " .. AutoTackleConfig.Mode
@@ -1160,6 +1480,7 @@ local function SetupUI(UI)
             end
         end
         
+        UpdateDebugVisibility()
         notify("Syllinse", "Config synchronized!", true)
     end })
 end
