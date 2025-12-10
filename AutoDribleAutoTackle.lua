@@ -1,4 +1,4 @@
--- [v2.2] AUTO DRIBBLE + AUTO TACKLE + FULL GUI + UI INTEGRATION (С MANUAL BUTTON)
+-- [v2.3] AUTO DRIBBLE + AUTO TACKLE + FULL GUI + UI INTEGRATION (С MANUAL BUTTON ИСПРАВЛЕННАЯ)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -221,6 +221,11 @@ local function UpdateDebugVisibility()
             line.Visible = false
         end
     end
+    
+    -- Обновляем видимость кнопки ManualTackle
+    if AutoTackleStatus.ButtonGui and AutoTackleStatus.ButtonGui:FindFirstChild("ManualTackleButton") then
+        AutoTackleStatus.ButtonGui.ManualTackleButton.Visible = AutoTackleConfig.ManualButton and AutoTackleConfig.Enabled
+    end
 end
 
 local function CleanupDebugText()
@@ -243,93 +248,6 @@ local function CleanupDebugText()
         Gui.DribbleTargetLabel.Text = "Targets: 0"
         Gui.DribbleTacklingLabel.Text = "Nearest: None"
         Gui.AutoDribbleLabel.Text = "AutoDribble: Idle"
-    end
-end
-
--- === MANUAL TACKLE BUTTON ===
-local function SetupManualTackleButton()
-    if AutoTackleStatus.ButtonGui then AutoTackleStatus.ButtonGui:Destroy() end
-    
-    local buttonGui = Instance.new("ScreenGui")
-    buttonGui.Name = "ManualTackleButtonGui"
-    buttonGui.ResetOnSpawn = false
-    buttonGui.IgnoreGuiInset = false
-    buttonGui.Parent = game:GetService("CoreGui")
-    
-    local size = 50 * AutoTackleConfig.ButtonScale
-    local screenSize = Camera.ViewportSize
-    local initialX = screenSize.X / 2 - size / 2
-    local initialY = screenSize.Y * 0.7
-    
-    local buttonFrame = Instance.new("Frame")
-    buttonFrame.Size = UDim2.new(0, size, 0, size)
-    buttonFrame.Position = UDim2.new(0, initialX, 0, initialY)
-    buttonFrame.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-    buttonFrame.BackgroundTransparency = 0.3
-    buttonFrame.BorderSizePixel = 0
-    buttonFrame.Visible = AutoTackleConfig.ManualButton
-    buttonFrame.Parent = buttonGui
-    
-    Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0.5, 0)
-    
-    local buttonIcon = Instance.new("ImageLabel")
-    buttonIcon.Size = UDim2.new(0, size*0.6, 0, size*0.6)
-    buttonIcon.Position = UDim2.new(0.5, -size*0.3, 0.5, -size*0.3)
-    buttonIcon.BackgroundTransparency = 1
-    buttonIcon.Image = "rbxassetid://14317040670"
-    buttonIcon.Parent = buttonFrame
-    
-    -- Логика перетаскивания
-    buttonFrame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            AutoTackleStatus.TouchStartTime = tick()
-            local mousePos = input.UserInputType == Enum.UserInputType.Touch and Vector2.new(input.Position.X, input.Position.Y) or UserInputService:GetMouseLocation()
-            AutoTackleStatus.Dragging = true
-            AutoTackleStatus.DragStart = mousePos
-            AutoTackleStatus.StartPos = buttonFrame.Position
-        end
-    end)
-    
-    UserInputService.InputChanged:Connect(function(input)
-        if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and AutoTackleStatus.Dragging then
-            local mousePos = input.UserInputType == Enum.UserInputType.Touch and Vector2.new(input.Position.X, input.Position.Y) or UserInputService:GetMouseLocation()
-            local delta = mousePos - AutoTackleStatus.DragStart
-            buttonFrame.Position = UDim2.new(AutoTackleStatus.StartPos.X.Scale, AutoTackleStatus.StartPos.X.Offset + delta.X, AutoTackleStatus.StartPos.Y.Scale, AutoTackleStatus.StartPos.Y.Offset + delta.Y)
-        end
-    end)
-    
-    buttonFrame.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            AutoTackleStatus.Dragging = false
-            
-            if AutoTackleStatus.TouchStartTime > 0 and tick() - AutoTackleStatus.TouchStartTime < 0.2 then
-                ManualTackleAction()
-            end
-            
-            AutoTackleStatus.TouchStartTime = 0
-        end
-    end)
-    
-    AutoTackleStatus.ButtonGui = buttonGui
-end
-
-local function ToggleManualTackleButton(value)
-    AutoTackleConfig.ManualButton = value
-    
-    if value then
-        SetupManualTackleButton()
-    else
-        if AutoTackleStatus.ButtonGui then 
-            AutoTackleStatus.ButtonGui:Destroy() 
-            AutoTackleStatus.ButtonGui = nil 
-        end
-    end
-end
-
-local function SetTackleButtonScale(value)
-    AutoTackleConfig.ButtonScale = value
-    if AutoTackleConfig.ManualButton then 
-        SetupManualTackleButton() 
     end
 end
 
@@ -681,6 +599,7 @@ local function PerformDribble()
     end
 end
 
+-- Функция ManualTackleAction должна быть объявлена ДО SetupManualTackleButton
 local function ManualTackleAction()
     local currentTime = tick()
     if currentTime - LastManualTackleTime < AutoTackleConfig.ManualTackleCooldown then 
@@ -733,6 +652,98 @@ local function ManualTackleAction()
             end
         end)
         return false
+    end
+end
+
+-- === MANUAL TACKLE BUTTON ===
+local function SetupManualTackleButton()
+    if AutoTackleStatus.ButtonGui then 
+        AutoTackleStatus.ButtonGui:Destroy() 
+        AutoTackleStatus.ButtonGui = nil 
+    end
+    
+    local buttonGui = Instance.new("ScreenGui")
+    buttonGui.Name = "ManualTackleButtonGui"
+    buttonGui.ResetOnSpawn = false
+    buttonGui.IgnoreGuiInset = false
+    buttonGui.Parent = game:GetService("CoreGui")
+    
+    local size = 50 * AutoTackleConfig.ButtonScale
+    local screenSize = Camera.ViewportSize
+    local initialX = screenSize.X / 2 - size / 2
+    local initialY = screenSize.Y * 0.7
+    
+    local buttonFrame = Instance.new("Frame")
+    buttonFrame.Name = "ManualTackleButton"
+    buttonFrame.Size = UDim2.new(0, size, 0, size)
+    buttonFrame.Position = UDim2.new(0, initialX, 0, initialY)
+    buttonFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
+    buttonFrame.BackgroundTransparency = 0.3
+    buttonFrame.BorderSizePixel = 0
+    buttonFrame.Visible = AutoTackleConfig.ManualButton and AutoTackleConfig.Enabled
+    buttonFrame.Parent = buttonGui
+    
+    Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0.5, 0)
+    
+    local buttonIcon = Instance.new("ImageLabel")
+    buttonIcon.Size = UDim2.new(0, size*0.6, 0, size*0.6)
+    buttonIcon.Position = UDim2.new(0.5, -size*0.3, 0.5, -size*0.3)
+    buttonIcon.BackgroundTransparency = 1
+    buttonIcon.Image = "rbxassetid://73279554401260"
+    buttonIcon.Parent = buttonFrame
+    
+    -- Логика перетаскивания
+    buttonFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            AutoTackleStatus.TouchStartTime = tick()
+            local mousePos = input.UserInputType == Enum.UserInputType.Touch and Vector2.new(input.Position.X, input.Position.Y) or UserInputService:GetMouseLocation()
+            AutoTackleStatus.Dragging = true
+            AutoTackleStatus.DragStart = mousePos
+            AutoTackleStatus.StartPos = buttonFrame.Position
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and AutoTackleStatus.Dragging then
+            local mousePos = input.UserInputType == Enum.UserInputType.Touch and Vector2.new(input.Position.X, input.Position.Y) or UserInputService:GetMouseLocation()
+            local delta = mousePos - AutoTackleStatus.DragStart
+            buttonFrame.Position = UDim2.new(AutoTackleStatus.StartPos.X.Scale, AutoTackleStatus.StartPos.X.Offset + delta.X, AutoTackleStatus.StartPos.Y.Scale, AutoTackleStatus.StartPos.Y.Offset + delta.Y)
+        end
+    end)
+    
+    buttonFrame.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            AutoTackleStatus.Dragging = false
+            
+            if AutoTackleStatus.TouchStartTime > 0 and tick() - AutoTackleStatus.TouchStartTime < 0.2 then
+                ManualTackleAction()
+            end
+            
+            AutoTackleStatus.TouchStartTime = 0
+        end
+    end)
+    
+    AutoTackleStatus.ButtonGui = buttonGui
+end
+
+local function ToggleManualTackleButton(value)
+    AutoTackleConfig.ManualButton = value
+    
+    if value then
+        SetupManualTackleButton()
+    else
+        if AutoTackleStatus.ButtonGui then 
+            AutoTackleStatus.ButtonGui:Destroy() 
+            AutoTackleStatus.ButtonGui = nil 
+        end
+    end
+    UpdateDebugVisibility()
+end
+
+local function SetTackleButtonScale(value)
+    AutoTackleConfig.ButtonScale = value
+    if AutoTackleConfig.ManualButton then 
+        SetupManualTackleButton() 
     end
 end
 
