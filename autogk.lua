@@ -1,5 +1,5 @@
 -- GK Helper v46 — Advanced Defense Module
--- Модульный скрипт для лоадера
+-- Modular script for loader with fixed dive bug
 
 local player = game.Players.LocalPlayer
 local ws = workspace
@@ -9,78 +9,81 @@ local ts = game:GetService("TweenService")
 local tweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- V46 ADVANCED DEFENSE - НАСТРОЙКИ КОНФИГУРАЦИИ
+-- V46 ADVANCED DEFENSE - CONFIGURATION
 local CONFIG = {
-    -- === ДВИЖЕНИЕ ===
-    SPEED = 34,                     -- Базовая скорость перемещения
-    STAND_DIST = 2.6,               -- Стандартное расстояние от ворот при защите
-    MIN_DIST = 1.3,                 -- Минимальное расстояние для начала движения
-    MAX_CHASE_DIST = 40,            -- Максимальная дистанция преследования врага
-
-    -- === ПРЕДСКАЗАНИЕ ТРАЕКТОРИИ ===
-    PRED_STEPS = 120,               -- Количество шагов предсказания траектории мяча
-    CURVE_MULT = 38,                -- Множитель кривого удара
-    DT = 1/60,                      -- Дельта времени для расчета физики
-    GRAVITY = 110,                  -- Сила гравитации для предсказания
-    DRAG = 0.982,                   -- Сопротивление воздуха
-    BOUNCE_XZ = 0.72,               -- Отскок мяча по горизонтали
-    BOUNCE_Y = 0.68,                -- Отскок мяча по вертикали
-
-    -- === ДИСТАНЦИИ ===
-    AGGRO_THRES = 45,               -- Дистанция до врага для агрессивного режима
-    DIVE_DIST = 14,                 -- Максимальная дистанция для дайва
-    ENDPOINT_DIVE = 4,              -- Дистанция до endpoint для дайва
-    TOUCH_RANGE = 8.5,              -- Дистанция касания мяча руками
-    NEAR_BALL_DIST = 7,             -- Дистанция "близко к мячу" для автоматического отбития
-
-    -- === ЗОНА ЗАЩИТЫ ===
-    ZONE_DIST = 56,                 -- Глубина защитной зоны (зеленый куб)
-    ZONE_WIDTH = 2.5,               -- Ширина защитной зоны относительно ширины ворот
-
-    -- === ПОРОГИ СРАБАТЫВАНИЯ ===
-    DIVE_VEL_THRES = 18,            -- Минимальная скорость мяча для дайва
-    JUMP_VEL_THRES = 31,            -- Минимальная скорость мяча для прыжка
-    HIGH_BALL_THRES = 6.8,          -- Высота мяча для прыжка
-    CLOSE_THREAT_DIST = 4.0,        -- Дистанция для угрозы вблизи
-    JUMP_THRES = 5.0,               -- Порог высоты для определения прыжка
-    GATE_COVERAGE = 0.99,           -- Покрытие ворот (1.0 = полное покрытие)
-    CENTER_BIAS_DIST = 21,          -- Дистанция смещения к центру
-    LATERAL_MAX_MULT = 0.45,        -- Максимальное боковое смещение относительно ширины ворот
-
-    -- === КУЛДАУНЫ ===
-    DIVE_COOLDOWN = 1.3,            -- КД между дайвами
-    JUMP_COOLDOWN = 0.95,           -- КД между прыжками
-    ATTACK_COOLDOWN = 1.5,          -- КД между сменой целей атаки
-
-    -- === СКОРОСТЬ ДАЙВА ===
-    DIVE_SPEED = 40,                -- Скорость дайва
-
-    -- === ВИЗУАЛЬНЫЕ НАСТРОЙКИ ===
-    SHOW_TRAJECTORY = true,         -- Показывать траекторию мяча
-    SHOW_ENDPOINT = true,           -- Показывать конечную точку мяча
-    SHOW_GOAL_CUBE = true,          -- Показывать красный куб ворот
-    SHOW_ZONE = true,               -- Показывать зеленый куб защитной зоны
-    SHOW_BALL_BOX = true,           -- Показывать куб вокруг мяча
-
-    -- === РОТАЦИЯ ===
-    ROT_SMOOTH = 0.79,              -- Плавность поворота (0-1, больше = плавнее)
+    -- === BASIC SETTINGS ===
+    ENABLED = false,
     
-    -- === УЛУЧШЕННАЯ ЗАЩИТА ===
-    BALL_INTERCEPT_RANGE = 4.5,     -- Дистанция для перехвата мяча
-    MIN_INTERCEPT_TIME = 0.1,       -- Минимальное время для перехвата
-    ADVANCE_DISTANCE = 3.8,         -- Дистанция выхода вперед
-    DIVE_LOOK_AHEAD = 0.25,         -- Упреждение взгляда при дайве
+    -- === MOVEMENT ===
+    SPEED = 34,                     -- Base movement speed
+    STAND_DIST = 2.6,               -- Standard distance from goal
+    MIN_DIST = 1.3,                 -- Minimum distance to start moving
+    MAX_CHASE_DIST = 40,            -- Maximum chase distance
     
-    -- === НАСТРОЙКИ АТАКИ ===
-    PRIORITY = "attack",           -- Приоритет: "defense" - защита, "attack" - атака
-    AUTO_ATTACK_IN_ZONE = true,     -- Автоматически атаковать врагов в защитной зоне
-    ATTACK_DISTANCE = 34,          -- Дистанция для приближения к врагу
-    BLOCK_ANGLE_MULT = 0.85,        -- Множитель блокировки угла обзора врага (0-1)
-    AGGRESSIVE_MODE = false,        -- Агрессивный режим (постоянно преследовать врага)
-    ATTACK_WHEN_CLOSE_TO_BALL = true -- Атаковать врага с мячом
+    -- === DISTANCES ===
+    AGGRO_THRES = 45,               -- Distance to enemy for aggressive mode
+    DIVE_DIST = 14,                 -- Maximum distance for dive
+    ENDPOINT_DIVE = 4,              -- Distance to endpoint for dive
+    TOUCH_RANGE = 8.5,              -- Hand touch range
+    NEAR_BALL_DIST = 7,             -- "Close to ball" distance for auto save
+    
+    -- === DEFENSE ZONE ===
+    ZONE_DIST = 56,                 -- Defense zone depth (green cube)
+    ZONE_WIDTH = 2.5,               -- Zone width relative to goal width
+    
+    -- === THRESHOLDS ===
+    DIVE_VEL_THRES = 18,            -- Minimum ball speed for dive
+    JUMP_VEL_THRES = 31,            -- Minimum ball speed for jump
+    HIGH_BALL_THRES = 6.8,          -- Ball height for jump
+    CLOSE_THREAT_DIST = 4.0,        -- Close threat distance
+    JUMP_THRES = 5.0,               -- Height threshold for jump
+    GATE_COVERAGE = 0.99,           -- Goal coverage (1.0 = full coverage)
+    CENTER_BIAS_DIST = 21,          -- Center bias distance
+    LATERAL_MAX_MULT = 0.45,        -- Max lateral movement relative to goal width
+    
+    -- === COOLDOWNS ===
+    DIVE_COOLDOWN = 1.3,            -- Cooldown between dives
+    JUMP_COOLDOWN = 0.95,           -- Cooldown between jumps
+    ATTACK_COOLDOWN = 1.5,          -- Cooldown between attack target changes
+    
+    -- === DIVE SPEED ===
+    DIVE_SPEED = 40,                -- Dive speed
+    
+    -- === VISUAL SETTINGS ===
+    SHOW_TRAJECTORY = true,         -- Show ball trajectory
+    SHOW_ENDPOINT = true,           -- Show endpoint
+    SHOW_GOAL_CUBE = true,          -- Show goal cube (red)
+    SHOW_ZONE = true,               -- Show defense zone (green cube)
+    SHOW_BALL_BOX = true,           -- Show ball cube
+    
+    -- === ROTATION ===
+    ROT_SMOOTH = 0.79,              -- Rotation smoothness (0-1, higher = smoother)
+    
+    -- === ADVANCED DEFENSE ===
+    BALL_INTERCEPT_RANGE = 4.5,     -- Ball interception range
+    MIN_INTERCEPT_TIME = 0.1,       -- Minimum intercept time
+    ADVANCE_DISTANCE = 3.8,         -- Advance forward distance
+    DIVE_LOOK_AHEAD = 0.25,         -- Look ahead for dive
+    
+    -- === ATTACK SETTINGS ===
+    PRIORITY = "attack",            -- Priority: "defense" or "attack"
+    AUTO_ATTACK_IN_ZONE = true,     -- Auto attack enemies in defense zone
+    ATTACK_DISTANCE = 34,           -- Distance to approach enemy
+    BLOCK_ANGLE_MULT = 0.85,        -- Enemy FOV blocking multiplier (0-1)
+    AGGRESSIVE_MODE = false,        -- Aggressive mode (constantly chase enemy)
+    ATTACK_WHEN_CLOSE_TO_BALL = true, -- Attack enemy with ball
+    
+    -- === PREDICTION SETTINGS ===
+    PRED_STEPS = 120,               -- Trajectory prediction steps
+    CURVE_MULT = 38,                -- Curve multiplier
+    DT = 1/60,                      -- Delta time for physics
+    GRAVITY = 110,                  -- Gravity for prediction
+    DRAG = 0.982,                   -- Air resistance
+    BOUNCE_XZ = 0.72,               -- Horizontal bounce
+    BOUNCE_Y = 0.68                 -- Vertical bounce
 }
 
--- Состояния модуля
+-- Module state
 local moduleState = {
     enabled = false,
     lastDiveTime = 0,
@@ -97,16 +100,18 @@ local moduleState = {
     currentBV = nil,
     currentGyro = nil,
     smoothCFrame = nil,
-    visualObjects = {}
+    visualObjects = {},
+    heartbeatConnection = nil,
+    uiElements = {}
 }
 
--- Глобальные переменные
+-- Global variables
 local GoalCFrame, GoalForward, GoalWidth = nil, nil, 0
 local maxDistFromGoal = 50
 
--- Функция для создания визуалов
+-- Create visuals function
 local function createVisuals()
-    -- Очищаем старые визуалы если есть
+    -- Clear old visuals if exist
     for _, objList in pairs(moduleState.visualObjects) do
         if type(objList) == "table" then
             for _, drawing in pairs(objList) do
@@ -204,7 +209,7 @@ local function hideAllVisuals()
     end
 end
 
--- Функция проверки вратаря
+-- Check if goalkeeper
 local function checkIfGoalkeeper()
     if tick() - moduleState.lastGoalkeeperCheck < 1 then return moduleState.isGoalkeeper end
     
@@ -215,14 +220,14 @@ local function checkIfGoalkeeper()
     local wasGoalkeeper = moduleState.isGoalkeeper
     moduleState.isGoalkeeper = isHPG or isAPG
     
-    -- Если перестали быть вратарем - очищаем визуалы
+    -- If stopped being goalkeeper - clear visuals
     if wasGoalkeeper and not moduleState.isGoalkeeper then
         hideAllVisuals()
         if moduleState.currentBV then pcall(function() moduleState.currentBV:Destroy() end) moduleState.currentBV = nil end
         if moduleState.currentGyro then pcall(function() moduleState.currentGyro:Destroy() end) moduleState.currentGyro = nil end
     end
     
-    -- Если стали вратарем - создаем визуалы
+    -- If became goalkeeper - create visuals
     if moduleState.isGoalkeeper and not wasGoalkeeper and moduleState.enabled then
         createVisuals()
     end
@@ -448,11 +453,11 @@ local function rotateSmooth(root, targetPos, isOwner, isDivingNow, ballVel)
     local finalLookPos
     
     if isDivingNow and ballVel then
-        -- При дайве смотрим туда, куда летит мяч (с небольшим упреждением)
+        -- During dive, look where the ball is going (with slight lead)
         finalLookPos = targetPos + ballVel.Unit * CONFIG.DIVE_LOOK_AHEAD
         moduleState.currentTargetType = "dive"
     else
-        -- В остальное время смотрим на мяч
+        -- Otherwise look at the ball
         finalLookPos = targetPos
         moduleState.currentTargetType = "ball"
     end
@@ -521,7 +526,7 @@ local function clearTrajAndEndpoint()
     end
 end
 
--- Функция: Поиск точки для перехвата
+-- Find intercept point
 local function findBestInterceptPoint(rootPos, ballPos, ballVel, points)
     if not points or #points < 2 then return nil end
     
@@ -533,7 +538,7 @@ local function findBestInterceptPoint(rootPos, ballPos, ballVel, points)
         local distToPoint = (rootPos - point).Magnitude
         local ballTravelDist = 0
         
-        -- Вычисляем расстояние, которое пролетит мяч до этой точки
+        -- Calculate ball travel distance to this point
         for j = 1, i-1 do
             ballTravelDist = ballTravelDist + (points[j+1] - points[j]).Magnitude
         end
@@ -541,7 +546,7 @@ local function findBestInterceptPoint(rootPos, ballPos, ballVel, points)
         local timeToPoint = ballTravelDist / math.max(1, ballVel.Magnitude)
         local timeToReach = distToPoint / CONFIG.SPEED
         
-        -- Если можем добраться до точки раньше мяча
+        -- If we can reach the point before the ball
         if timeToReach < timeToPoint - CONFIG.MIN_INTERCEPT_TIME then
             local score = distToPoint + (point - GoalCFrame.Position):Dot(GoalForward) * 0.5
             if score < bestScore then
@@ -554,7 +559,7 @@ local function findBestInterceptPoint(rootPos, ballPos, ballVel, points)
     return bestPoint
 end
 
--- Функция: Проверка находится ли игрок в защитной зоне
+-- Check if player is in defense zone
 local function isInDefenseZone(position)
     if not (GoalCFrame and GoalForward) then return false end
     
@@ -566,7 +571,7 @@ local function isInDefenseZone(position)
            distLateral < (GoalWidth * CONFIG.ZONE_WIDTH) / 2
 end
 
--- Функция: Поиск цели для атаки (уменьшение угла обзора врага)
+-- Find attack target (reduce enemy FOV)
 local function findAttackTarget(rootPos, ball)
     local bestTarget = nil
     local bestScore = -math.huge
@@ -577,7 +582,7 @@ local function findAttackTarget(rootPos, ball)
             local targetHum = otherPlayer.Character:FindFirstChild("Humanoid")
             
             if targetRoot and targetHum and targetHum.Health > 0 then
-                -- Проверяем команду (враг ли)
+                -- Check if enemy
                 local isEnemy = true
                 pcall(function()
                     if ws.Bools.HPG.Value == otherPlayer or ws.Bools.APG.Value == otherPlayer then
@@ -589,15 +594,15 @@ local function findAttackTarget(rootPos, ball)
                     local distToTarget = (rootPos - targetRoot.Position).Magnitude
                     local inZone = isInDefenseZone(targetRoot.Position)
                     
-                    -- Вычисляем оценку цели
+                    -- Calculate target score
                     local score = 0
                     
-                    -- Приоритет целям в защитной зоне
+                    -- Priority to targets in defense zone
                     if inZone then
                         score = score + 50
                     end
                     
-                    -- Приоритет целям с мячом
+                    -- Priority to targets with ball
                     local hasBall = false
                     pcall(function()
                         if ball:FindFirstChild("creator") and ball.creator.Value == otherPlayer then
@@ -606,19 +611,19 @@ local function findAttackTarget(rootPos, ball)
                         end
                     end)
                     
-                    -- Приоритет ближайшим целям
+                    -- Priority to closest targets
                     score = score + (100 - math.min(distToTarget, 100))
                     
-                    -- Приоритет целям, которые смотрят на ворота
+                    -- Priority to targets looking at goal
                     local targetLook = targetRoot.CFrame.LookVector
                     local toGoalDir = (GoalCFrame.Position - targetRoot.Position).Unit
                     local angleToGoal = math.deg(math.acos(math.clamp(targetLook:Dot(toGoalDir), -1, 1)))
                     
-                    if angleToGoal < 45 then -- Если враг смотрит на ворота
+                    if angleToGoal < 45 then -- If enemy is looking at goal
                         score = score + 30
                     end
                     
-                    -- Учитываем настройку приоритета
+                    -- Consider priority setting
                     if CONFIG.PRIORITY == "attack" then
                         score = score * 1.5
                     end
@@ -635,7 +640,7 @@ local function findAttackTarget(rootPos, ball)
     return bestTarget
 end
 
--- Функция: Блокировка угла обзора врага (уменьшение FOV)
+-- Block enemy FOV (reduce enemy shooting angle)
 local function blockEnemyView(root, targetPlayer, ball)
     if tick() - moduleState.lastAttackTime < CONFIG.ATTACK_COOLDOWN then
         return false
@@ -650,25 +655,25 @@ local function blockEnemyView(root, targetPlayer, ball)
     
     local distToTarget = (root.Position - targetRoot.Position).Magnitude
     
-    -- Вычисляем позицию для блокировки угла обзора
-    -- Становимся между врагом и центром ворот, но чуть ближе к врагу
+    -- Calculate blocking position
+    -- Position between enemy and goal center, closer to enemy
     local goalCenter = GoalCFrame.Position
     local toGoalDir = (goalCenter - targetRoot.Position).Unit
     
-    -- Вычисляем оптимальную позицию для блокировки
+    -- Calculate optimal blocking position
     local blockDistance = CONFIG.ATTACK_DISTANCE
     local blockPos = targetRoot.Position + toGoalDir * blockDistance
     
-    -- Корректируем высоту
+    -- Adjust height
     blockPos = Vector3.new(blockPos.X, root.Position.Y, blockPos.Z)
     
-    -- Двигаемся к позиции блокировки
+    -- Move to blocking position
     moveToTarget(root, blockPos)
     
-    -- Поворачиваемся лицом к врагу
+    -- Face the enemy
     rotateSmooth(root, targetRoot.Position, false, false, Vector3.new())
     
-    -- Если враг с мячом и мы достаточно близко, можем блокировать удар
+    -- If enemy has ball and we're close enough, we can block the shot
     local hasBall = false
     pcall(function()
         if ball:FindFirstChild("creator") and ball.creator.Value == targetPlayer then
@@ -677,7 +682,7 @@ local function blockEnemyView(root, targetPlayer, ball)
     end)
     
     if hasBall and distToTarget < CONFIG.ATTACK_DISTANCE * 1.5 then
-        -- Смотрим прямо на врага, чтобы блокировать удар
+        -- Look directly at enemy to block shot
         rotateSmooth(root, targetRoot.Position, false, false, Vector3.new())
         moduleState.lastAttackTime = tick()
         return true
@@ -686,7 +691,88 @@ local function blockEnemyView(root, targetPlayer, ball)
     return false
 end
 
--- Функция очистки всех ресурсов
+-- FIXED DIVE FUNCTION
+local function performDive(root, hum, diveTarget)
+    moduleState.isDiving = true
+    moduleState.lastDiveTime = tick()
+    
+    -- Determine dive direction relative to goal
+    local relToGoal = diveTarget - GoalCFrame.Position
+    local lateralDist = relToGoal:Dot(GoalCFrame.RightVector)
+    local dir = lateralDist > 0 and "Right" or "Left"
+
+    pcall(function()
+        ReplicatedStorage.Remotes.Action:FireServer(dir.."Dive", root.CFrame)
+    end)
+
+    -- FIXED: Calculate dive direction with proper limits
+    local toTarget = diveTarget - root.Position
+    local horizontalDir = Vector3.new(toTarget.X, 0, toTarget.Z)
+    
+    -- Normalize and limit the direction
+    if horizontalDir.Magnitude > 0.1 then
+        horizontalDir = horizontalDir.Unit
+    else
+        -- If already at target, dive forward
+        horizontalDir = root.CFrame.LookVector * Vector3.new(1, 0, 1)
+        if horizontalDir.Magnitude > 0 then
+            horizontalDir = horizontalDir.Unit
+        else
+            horizontalDir = Vector3.new(1, 0, 0) -- Default direction
+        end
+    end
+    
+    -- Limit speed to prevent launching
+    local diveSpeed = math.min(CONFIG.DIVE_SPEED, 45)
+    
+    -- Create dive velocity with proper horizontal movement
+    local diveBV = Instance.new("BodyVelocity", root)
+    diveBV.MaxForce = Vector3.new(5000000, 0, 5000000) -- Only horizontal force
+    diveBV.Velocity = horizontalDir * diveSpeed
+    
+    -- Short duration to prevent flying
+    game.Debris:AddItem(diveBV, 0.6)
+    
+    -- Quick deceleration
+    if ts then
+        ts:Create(diveBV, TweenInfo.new(0.3), {Velocity = Vector3.new()}):Play()
+    end
+
+    -- Create gyro for stability
+    local diveGyro = Instance.new("BodyGyro", root)
+    diveGyro.P = 2200000
+    diveGyro.MaxTorque = Vector3.new(0, 4500000, 0) -- Only rotate horizontally
+    diveGyro.CFrame = CFrame.lookAt(root.Position, diveTarget)
+    game.Debris:AddItem(diveGyro, 0.8)
+
+    -- Play dive animation
+    local lowDive = (diveTarget.Y <= 3.8)
+    pcall(function()
+        local animName = dir .. (lowDive and "LowDive" or "Dive")
+        local anim = hum:LoadAnimation(ReplicatedStorage.Animations.GK[animName])
+        anim.Priority = Enum.AnimationPriority.Action4
+        anim:Play()
+    end)
+
+    -- Disable jumping during dive
+    hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+    
+    -- Re-enable after dive
+    task.delay(0.8, function()
+        hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+        moduleState.isDiving = false
+        
+        -- Clean up physics
+        if diveBV then 
+            pcall(function() diveBV:Destroy() end) 
+        end
+        if diveGyro then 
+            pcall(function() diveGyro:Destroy() end) 
+        end
+    end)
+end
+
+-- Cleanup function
 local function cleanup()
     if moduleState.currentBV then 
         pcall(function() moduleState.currentBV:Destroy() end) 
@@ -704,10 +790,9 @@ local function cleanup()
     moduleState.smoothCFrame = nil
 end
 
--- Основной heartbeat цикл
-local heartbeatConnection
+-- Main heartbeat cycle
 local function startHeartbeat()
-    heartbeatConnection = rs.Heartbeat:Connect(function()
+    moduleState.heartbeatConnection = rs.Heartbeat:Connect(function()
         if not moduleState.enabled then 
             hideAllVisuals()
             return 
@@ -715,7 +800,7 @@ local function startHeartbeat()
         
         moduleState.frameCounter = moduleState.frameCounter + 1
         
-        -- Проверяем остались ли мы вратарем
+        -- Check if still goalkeeper
         if not checkIfGoalkeeper() then
             hideAllVisuals()
             if moduleState.currentBV then pcall(function() moduleState.currentBV:Destroy() end) moduleState.currentBV = nil end
@@ -749,7 +834,7 @@ local function startHeartbeat()
             return 
         end
 
-        -- Отрисовка визуалов
+        -- Draw visuals
         if CONFIG.SHOW_GOAL_CUBE and moduleState.visualObjects.GoalCube then
             drawCube(moduleState.visualObjects.GoalCube, GoalCFrame, Vector3.new(GoalWidth, 8, 2), Color3.fromRGB(255, 0, 0))
         end
@@ -769,15 +854,15 @@ local function startHeartbeat()
         local blockEnemyViewActive = false
         local attackTargetPlayer = nil
 
-        -- Поиск цели для атаки (блокировки угла обзора)
+        -- Find attack target (block enemy FOV)
         if CONFIG.PRIORITY == "attack" or CONFIG.AUTO_ATTACK_IN_ZONE then
             attackTargetPlayer = findAttackTarget(root.Position, ball)
             
-            -- Если найден враг в защитной зоне и включена автоатака
+            -- If enemy found in defense zone and auto attack enabled
             if attackTargetPlayer and CONFIG.AUTO_ATTACK_IN_ZONE then
                 local targetRoot = attackTargetPlayer.Character and attackTargetPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if targetRoot and isInDefenseZone(targetRoot.Position) then
-                    -- Блокируем угол обзора врага
+                    -- Block enemy FOV
                     blockEnemyViewActive = blockEnemyView(root, attackTargetPlayer, ball)
                 end
             end
@@ -792,7 +877,7 @@ local function startHeartbeat()
                 distToEnemy = (root.Position - oRoot.Position).Magnitude
                 isAggro = enemyDistFromLine < CONFIG.AGGRO_THRES and distToEnemy < CONFIG.MAX_CHASE_DIST and hasWeld
                 
-                -- Блокировка врага с мячом (старая логика)
+                -- Block enemy with ball (old logic)
                 if isAggro and not blockEnemyViewActive then
                     blockEnemyViewActive = true
                     local viewBlockPos = (oRoot.Position + GoalCFrame.Position) / 2 + GoalForward * 1.2
@@ -802,7 +887,7 @@ local function startHeartbeat()
             end
         end
 
-        -- Если включен агрессивный режим и есть враг с мячом, преследуем его
+        -- If aggressive mode enabled and enemy has ball, chase them
         if CONFIG.AGGRESSIVE_MODE and owner and owner ~= player and oRoot and not blockEnemyViewActive then
             local targetPos = oRoot.Position + GoalForward * CONFIG.ATTACK_DISTANCE
             moveToTarget(root, targetPos)
@@ -818,7 +903,7 @@ local function startHeartbeat()
         local isThreat = false
         local timeToEndpoint = 999
 
-        -- Обновление предикта при новом ударе
+        -- Update prediction on new shot
         local freshShot = false
         if velMag > 18 and moduleState.lastBallVelMag <= 18 then
             freshShot = true
@@ -843,7 +928,7 @@ local function startHeartbeat()
             clearTrajAndEndpoint()
         end
 
-        -- Отрисовка траектории
+        -- Draw trajectory
         if CONFIG.SHOW_TRAJECTORY and points and moduleState.visualObjects.trajLines then
             local cam = ws.CurrentCamera
             for i = 1, math.min(CONFIG.PRED_STEPS, #points - 1) do
@@ -874,7 +959,7 @@ local function startHeartbeat()
         local defenseBase = GoalCFrame.Position + GoalForward * CONFIG.STAND_DIST
         local lateral = 0
 
-        -- Только если не блокируем врага
+        -- Only if not blocking enemy
         if not blockEnemyViewActive then
             if isMyBall then
                 lateral = 0
@@ -897,16 +982,16 @@ local function startHeartbeat()
 
             local bestPos = getSmartPosition(defenseBase, rightVec, lateral, GoalWidth, threatLateral, enemyLateral, isAggro)
             
-            -- Улучшенная логика: Пытаемся перехватить мяч, а не бежать к endpoint
+            -- Improved logic: Try to intercept ball, not just run to endpoint
             if isShot and points and isThreat then
                 local interceptPoint = findBestInterceptPoint(root.Position, ball.Position, ball.Velocity, points)
                 if interceptPoint then
-                    -- Если можем перехватить - идем к точке перехвата
+                    -- If can intercept - go to intercept point
                     local adjustedPos = interceptPoint + GoalForward * CONFIG.ADVANCE_DISTANCE
                     adjustedPos = Vector3.new(adjustedPos.X, root.Position.Y, adjustedPos.Z)
                     bestPos = adjustedPos
                 elseif distEnd > 8 and timeToEndpoint > 1.0 then
-                    -- Если мяч летит долго - выходим немного вперед
+                    -- If ball is flying slowly - advance forward
                     local advancePos = defenseBase + GoalForward * CONFIG.ADVANCE_DISTANCE * 2
                     bestPos = Vector3.new(advancePos.X, root.Position.Y, advancePos.Z)
                 end
@@ -915,7 +1000,7 @@ local function startHeartbeat()
             moveToTarget(root, bestPos)
         end
 
-        -- Улучшенная ротация (смотрим на мяч, кроме случаев блокировки врага)
+        -- Improved rotation (look at ball, except when blocking enemy)
         if blockEnemyViewActive and attackTargetPlayer then
             local targetRoot = attackTargetPlayer.Character and attackTargetPlayer.Character:FindFirstChild("HumanoidRootPart")
             if targetRoot then
@@ -929,7 +1014,7 @@ local function startHeartbeat()
 
         -- ACTIONS
         if not isMyBall and not moduleState.isDiving then
-            -- Перехват мяча вблизи
+            -- Intercept ball nearby
             if distBall < CONFIG.BALL_INTERCEPT_RANGE and velMag < CONFIG.DIVE_VEL_THRES * 0.82 then
                 for _, hand in {char:FindFirstChild("RightHand"), char:FindFirstChild("LeftHand")} do
                     if hand and (hand.Position - ball.Position).Magnitude < CONFIG.TOUCH_RANGE then
@@ -940,14 +1025,14 @@ local function startHeartbeat()
                 end
             end
 
-            -- Прыжок для высоких мячей
+            -- Jump for high balls
             local highThreat = isThreat and endpoint and endpoint.Y > CONFIG.HIGH_BALL_THRES and distEnd < 10.0 and velMag > CONFIG.JUMP_VEL_THRES
             if highThreat and tick() - moduleState.lastJumpTime > CONFIG.JUMP_COOLDOWN then
                 forceJump(hum)
                 moduleState.lastJumpTime = tick()
             end
 
-            -- Дайв
+            -- Dive
             local emergency = false
             if isThreat then
                 if distEnd < CONFIG.ENDPOINT_DIVE then
@@ -959,58 +1044,9 @@ local function startHeartbeat()
                 end
             end
             
-            -- ИСПРАВЛЕННЫЙ ДАЙВ
+            -- Use fixed dive function
             if emergency and tick() - moduleState.lastDiveTime > CONFIG.DIVE_COOLDOWN then
-                moduleState.isDiving = true
-                moduleState.lastDiveTime = tick()
-                local diveTarget = endpoint or ball.Position
-                
-                -- Определяем направление дайва относительно ворот
-                local relToGoal = diveTarget - GoalCFrame.Position
-                local lateralDist = relToGoal:Dot(GoalCFrame.RightVector)
-                local dir = lateralDist > 0 and "Right" or "Left"
-
-                pcall(function()
-                    ReplicatedStorage.Remotes.Action:FireServer(dir.."Dive", root.CFrame)
-                end)
-
-                -- ИСПРАВЛЕНИЕ: Направляем дайв по горизонтали к мячу, не учитывая высоту
-                local diveDir = (diveTarget - root.Position)
-                diveDir = Vector3.new(diveDir.X, 0, diveDir.Z) -- Игнорируем вертикальную составляющую
-                if diveDir.Magnitude > 0 then
-                    diveDir = diveDir.Unit
-                else
-                    diveDir = root.CFrame.LookVector -- Направление по умолчанию
-                end
-                
-                local diveBV = Instance.new("BodyVelocity", root)
-                diveBV.MaxForce = Vector3.new(5e6, 0, 5e6)
-                diveBV.Velocity = diveDir * CONFIG.DIVE_SPEED
-                game.Debris:AddItem(diveBV, 1.0)
-                
-                if ts then
-                    ts:Create(diveBV, TweenInfo.new(0.5), {Velocity = diveBV.Velocity * 0.015}):Play()
-                end
-
-                local diveGyro = Instance.new("BodyGyro", root)
-                diveGyro.P = 2200000
-                diveGyro.MaxTorque = Vector3.new(0, 4.5e5, 0)
-                diveGyro.CFrame = CFrame.lookAt(root.Position, diveTarget)
-                game.Debris:AddItem(diveGyro, 1.0)
-
-                local lowDive = (diveTarget.Y <= 3.8)
-                pcall(function()
-                    local animName = dir .. (lowDive and "LowDive" or "Dive")
-                    local anim = hum:LoadAnimation(ReplicatedStorage.Animations.GK[animName])
-                    anim.Priority = Enum.AnimationPriority.Action4
-                    anim:Play()
-                end)
-
-                hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
-                task.delay(0.95, function()
-                    hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
-                    moduleState.isDiving = false
-                end)
+                performDive(root, hum, endpoint or ball.Position)
             end
         else
             if isMyBall then 
@@ -1024,43 +1060,46 @@ local function startHeartbeat()
     end)
 end
 
--- Модуль GK Helper
+-- GK Helper Module
 local GKHelperModule = {}
 
 function GKHelperModule.Init(UI, coreParam, notifyFunc)
     local core = coreParam
     local notify = notifyFunc
     
-    -- Создаем секцию в UI
+    -- Store notify function for later use
+    moduleState.notify = notifyFunc
+    
+    -- Create UI sections
     if UI.Sections.AutoGoalKeeper then
-        UI.Sections.AutoGoalKeeper:Header({ Name = "Auto GoalKeeper v46" })
-        UI.Sections.AutoGoalKeeper:Divider()
+        -- BASIC SETTINGS
+        UI.Sections.AutoGoalKeeper:Header({ Name = "GK Helper v46 - Basic Settings" })
         
-        -- Включение/выключение
-        UI.Sections.AutoGoalKeeper:Toggle({ 
+        moduleState.uiElements.Enabled = UI.Sections.AutoGoalKeeper:Toggle({ 
             Name = "Enabled", 
-            Default = false, 
+            Default = CONFIG.ENABLED, 
             Callback = function(v) 
+                CONFIG.ENABLED = v
                 moduleState.enabled = v
                 if v then
                     createVisuals()
                     startHeartbeat()
-                    notify("GK Helper", "Включен", true)
+                    notify("GK Helper", "Enabled", true)
                 else
-                    if heartbeatConnection then
-                        heartbeatConnection:Disconnect()
-                        heartbeatConnection = nil
+                    if moduleState.heartbeatConnection then
+                        moduleState.heartbeatConnection:Disconnect()
+                        moduleState.heartbeatConnection = nil
                     end
                     cleanup()
-                    notify("GK Helper", "Выключен", true)
+                    notify("GK Helper", "Disabled", true)
                 end
             end
         })
         
         UI.Sections.AutoGoalKeeper:Divider()
         
-        -- Настройки движения
-        UI.Sections.AutoGoalKeeper:Slider({
+        -- Movement Settings
+        moduleState.uiElements.Speed = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Speed",
             Minimum = 20,
             Maximum = 50,
@@ -1069,7 +1108,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Callback = function(v) CONFIG.SPEED = v end
         })
         
-        UI.Sections.AutoGoalKeeper:Slider({
+        moduleState.uiElements.StandDist = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Stand Distance",
             Minimum = 1.0,
             Maximum = 5.0,
@@ -1080,8 +1119,11 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
         
         UI.Sections.AutoGoalKeeper:Divider()
         
-        -- Настройки дайва
-        UI.Sections.AutoGoalKeeper:Slider({
+        -- ADVVANCED SETTINGS SECTION
+        UI.Sections.AutoGoalKeeper:Header({ Name = "Advanced Settings" })
+        
+        -- Dive Settings
+        moduleState.uiElements.DiveDist = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Dive Distance",
             Minimum = 5,
             Maximum = 20,
@@ -1090,7 +1132,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Callback = function(v) CONFIG.DIVE_DIST = v end
         })
         
-        UI.Sections.AutoGoalKeeper:Slider({
+        moduleState.uiElements.DiveSpeed = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Dive Speed",
             Minimum = 20,
             Maximum = 60,
@@ -1099,7 +1141,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Callback = function(v) CONFIG.DIVE_SPEED = v end
         })
         
-        UI.Sections.AutoGoalKeeper:Slider({
+        moduleState.uiElements.DiveVelThresh = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Dive Velocity Threshold",
             Minimum = 10,
             Maximum = 40,
@@ -1108,10 +1150,51 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Callback = function(v) CONFIG.DIVE_VEL_THRES = v end
         })
         
+        moduleState.uiElements.DiveCooldown = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Dive Cooldown",
+            Minimum = 0.5,
+            Maximum = 3.0,
+            Default = CONFIG.DIVE_COOLDOWN,
+            Precision = 1,
+            Callback = function(v) CONFIG.DIVE_COOLDOWN = v end
+        })
+        
         UI.Sections.AutoGoalKeeper:Divider()
         
-        -- Настройки зоны
-        UI.Sections.AutoGoalKeeper:Slider({
+        -- Jump Settings
+        moduleState.uiElements.JumpVelThresh = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Jump Velocity Threshold",
+            Minimum = 20,
+            Maximum = 50,
+            Default = CONFIG.JUMP_VEL_THRES,
+            Precision = 1,
+            Callback = function(v) CONFIG.JUMP_VEL_THRES = v end
+        })
+        
+        moduleState.uiElements.HighBallThresh = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "High Ball Threshold",
+            Minimum = 4.0,
+            Maximum = 10.0,
+            Default = CONFIG.HIGH_BALL_THRES,
+            Precision = 1,
+            Callback = function(v) CONFIG.HIGH_BALL_THRES = v end
+        })
+        
+        moduleState.uiElements.JumpCooldown = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Jump Cooldown",
+            Minimum = 0.5,
+            Maximum = 2.0,
+            Default = CONFIG.JUMP_COOLDOWN,
+            Precision = 1,
+            Callback = function(v) CONFIG.JUMP_COOLDOWN = v end
+        })
+        
+        UI.Sections.AutoGoalKeeper:Divider()
+        
+        -- DEFENSE ZONE SECTION
+        UI.Sections.AutoGoalKeeper:Header({ Name = "Defense Zone Settings" })
+        
+        moduleState.uiElements.ZoneDist = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Zone Distance",
             Minimum = 30,
             Maximum = 100,
@@ -1120,7 +1203,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Callback = function(v) CONFIG.ZONE_DIST = v end
         })
         
-        UI.Sections.AutoGoalKeeper:Slider({
+        moduleState.uiElements.ZoneWidth = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Zone Width Multiplier",
             Minimum = 1.0,
             Maximum = 3.0,
@@ -1129,23 +1212,43 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Callback = function(v) CONFIG.ZONE_WIDTH = v end
         })
         
+        moduleState.uiElements.AggroThresh = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Aggro Threshold",
+            Minimum = 20,
+            Maximum = 60,
+            Default = CONFIG.AGGRO_THRES,
+            Precision = 1,
+            Callback = function(v) CONFIG.AGGRO_THRES = v end
+        })
+        
+        moduleState.uiElements.MaxChaseDist = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Max Chase Distance",
+            Minimum = 20,
+            Maximum = 60,
+            Default = CONFIG.MAX_CHASE_DIST,
+            Precision = 1,
+            Callback = function(v) CONFIG.MAX_CHASE_DIST = v end
+        })
+        
         UI.Sections.AutoGoalKeeper:Divider()
         
-        -- Настройки приоритета
-        UI.Sections.AutoGoalKeeper:Dropdown({
+        -- ATTACK SETTINGS SECTION
+        UI.Sections.AutoGoalKeeper:Header({ Name = "Attack Settings" })
+        
+        moduleState.uiElements.Priority = UI.Sections.AutoGoalKeeper:Dropdown({
             Name = "Priority",
             Default = CONFIG.PRIORITY,
             Options = {"defense", "attack"},
             Callback = function(v) CONFIG.PRIORITY = v end
         })
         
-        UI.Sections.AutoGoalKeeper:Toggle({
+        moduleState.uiElements.AutoAttackInZone = UI.Sections.AutoGoalKeeper:Toggle({
             Name = "Auto Attack in Zone",
             Default = CONFIG.AUTO_ATTACK_IN_ZONE,
             Callback = function(v) CONFIG.AUTO_ATTACK_IN_ZONE = v end
         })
         
-        UI.Sections.AutoGoalKeeper:Slider({
+        moduleState.uiElements.AttackDistance = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Attack Distance",
             Minimum = 20,
             Maximum = 50,
@@ -1154,16 +1257,136 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Callback = function(v) CONFIG.ATTACK_DISTANCE = v end
         })
         
-        UI.Sections.AutoGoalKeeper:Toggle({
+        moduleState.uiElements.AggressiveMode = UI.Sections.AutoGoalKeeper:Toggle({
             Name = "Aggressive Mode",
             Default = CONFIG.AGGRESSIVE_MODE,
             Callback = function(v) CONFIG.AGGRESSIVE_MODE = v end
         })
         
+        moduleState.uiElements.AttackCooldown = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Attack Cooldown",
+            Minimum = 0.5,
+            Maximum = 3.0,
+            Default = CONFIG.ATTACK_COOLDOWN,
+            Precision = 1,
+            Callback = function(v) CONFIG.ATTACK_COOLDOWN = v end
+        })
+        
         UI.Sections.AutoGoalKeeper:Divider()
         
-        -- Визуальные настройки
-        UI.Sections.AutoGoalKeeper:Toggle({
+        -- PREDICTION SETTINGS SECTION
+        UI.Sections.AutoGoalKeeper:Header({ Name = "Prediction Settings" })
+        
+        moduleState.uiElements.PredSteps = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Prediction Steps",
+            Minimum = 60,
+            Maximum = 200,
+            Default = CONFIG.PRED_STEPS,
+            Precision = 0,
+            Callback = function(v) CONFIG.PRED_STEPS = v end
+        })
+        
+        moduleState.uiElements.Gravity = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Gravity",
+            Minimum = 80,
+            Maximum = 140,
+            Default = CONFIG.GRAVITY,
+            Precision = 1,
+            Callback = function(v) CONFIG.GRAVITY = v end
+        })
+        
+        moduleState.uiElements.Drag = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Air Drag",
+            Minimum = 0.95,
+            Maximum = 0.995,
+            Default = CONFIG.DRAG,
+            Precision = 3,
+            Callback = function(v) CONFIG.DRAG = v end
+        })
+        
+        moduleState.uiElements.CurveMult = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Curve Multiplier",
+            Minimum = 20,
+            Maximum = 60,
+            Default = CONFIG.CURVE_MULT,
+            Precision = 1,
+            Callback = function(v) CONFIG.CURVE_MULT = v end
+        })
+        
+        moduleState.uiElements.BounceXZ = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Horizontal Bounce",
+            Minimum = 0.5,
+            Maximum = 0.9,
+            Default = CONFIG.BOUNCE_XZ,
+            Precision = 2,
+            Callback = function(v) CONFIG.BOUNCE_XZ = v end
+        })
+        
+        moduleState.uiElements.BounceY = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Vertical Bounce",
+            Minimum = 0.5,
+            Maximum = 0.9,
+            Default = CONFIG.BOUNCE_Y,
+            Precision = 2,
+            Callback = function(v) CONFIG.BOUNCE_Y = v end
+        })
+        
+        UI.Sections.AutoGoalKeeper:Divider()
+        
+        -- ADVANCED DEFENSE SECTION
+        UI.Sections.AutoGoalKeeper:Header({ Name = "Advanced Defense Settings" })
+        
+        moduleState.uiElements.BallInterceptRange = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Ball Intercept Range",
+            Minimum = 2.0,
+            Maximum = 8.0,
+            Default = CONFIG.BALL_INTERCEPT_RANGE,
+            Precision = 1,
+            Callback = function(v) CONFIG.BALL_INTERCEPT_RANGE = v end
+        })
+        
+        moduleState.uiElements.MinInterceptTime = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Min Intercept Time",
+            Minimum = 0.05,
+            Maximum = 0.5,
+            Default = CONFIG.MIN_INTERCEPT_TIME,
+            Precision = 2,
+            Callback = function(v) CONFIG.MIN_INTERCEPT_TIME = v end
+        })
+        
+        moduleState.uiElements.AdvanceDistance = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Advance Distance",
+            Minimum = 1.0,
+            Maximum = 6.0,
+            Default = CONFIG.ADVANCE_DISTANCE,
+            Precision = 1,
+            Callback = function(v) CONFIG.ADVANCE_DISTANCE = v end
+        })
+        
+        moduleState.uiElements.RotSmooth = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Rotation Smoothness",
+            Minimum = 0.5,
+            Maximum = 0.95,
+            Default = CONFIG.ROT_SMOOTH,
+            Precision = 2,
+            Callback = function(v) CONFIG.ROT_SMOOTH = v end
+        })
+        
+        moduleState.uiElements.DiveLookAhead = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Dive Look Ahead",
+            Minimum = 0.1,
+            Maximum = 0.5,
+            Default = CONFIG.DIVE_LOOK_AHEAD,
+            Precision = 2,
+            Callback = function(v) CONFIG.DIVE_LOOK_AHEAD = v end
+        })
+        
+        UI.Sections.AutoGoalKeeper:Divider()
+        
+        -- VISUAL SETTINGS SECTION
+        UI.Sections.AutoGoalKeeper:Header({ Name = "Visual Settings" })
+        
+        moduleState.uiElements.ShowTrajectory = UI.Sections.AutoGoalKeeper:Toggle({
             Name = "Show Trajectory",
             Default = CONFIG.SHOW_TRAJECTORY,
             Callback = function(v) 
@@ -1174,7 +1397,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             end
         })
         
-        UI.Sections.AutoGoalKeeper:Toggle({
+        moduleState.uiElements.ShowEndpoint = UI.Sections.AutoGoalKeeper:Toggle({
             Name = "Show Endpoint",
             Default = CONFIG.SHOW_ENDPOINT,
             Callback = function(v) 
@@ -1185,7 +1408,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             end
         })
         
-        UI.Sections.AutoGoalKeeper:Toggle({
+        moduleState.uiElements.ShowGoalCube = UI.Sections.AutoGoalKeeper:Toggle({
             Name = "Show Goal Cube",
             Default = CONFIG.SHOW_GOAL_CUBE,
             Callback = function(v) 
@@ -1196,7 +1419,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             end
         })
         
-        UI.Sections.AutoGoalKeeper:Toggle({
+        moduleState.uiElements.ShowZone = UI.Sections.AutoGoalKeeper:Toggle({
             Name = "Show Zone",
             Default = CONFIG.SHOW_ZONE,
             Callback = function(v) 
@@ -1207,7 +1430,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             end
         })
         
-        UI.Sections.AutoGoalKeeper:Toggle({
+        moduleState.uiElements.ShowBallBox = UI.Sections.AutoGoalKeeper:Toggle({
             Name = "Show Ball Box",
             Default = CONFIG.SHOW_BALL_BOX,
             Callback = function(v) 
@@ -1220,50 +1443,82 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
         
         UI.Sections.AutoGoalKeeper:Divider()
         
-        -- Расширенные настройки
-        UI.Sections.AutoGoalKeeper:Slider({
-            Name = "Ball Intercept Range",
-            Minimum = 2.0,
-            Maximum = 8.0,
-            Default = CONFIG.BALL_INTERCEPT_RANGE,
-            Precision = 1,
-            Callback = function(v) CONFIG.BALL_INTERCEPT_RANGE = v end
-        })
+        -- SYNC CONFIG SECTION
+        UI.Sections.AutoGoalKeeper:Header({ Name = "Config Management" })
         
-        UI.Sections.AutoGoalKeeper:Slider({
-            Name = "Advance Distance",
-            Minimum = 1.0,
-            Maximum = 6.0,
-            Default = CONFIG.ADVANCE_DISTANCE,
-            Precision = 1,
-            Callback = function(v) CONFIG.ADVANCE_DISTANCE = v end
-        })
-        
-        UI.Sections.AutoGoalKeeper:Slider({
-            Name = "Rotation Smoothness",
-            Minimum = 0.5,
-            Maximum = 0.95,
-            Default = CONFIG.ROT_SMOOTH,
-            Precision = 2,
-            Callback = function(v) CONFIG.ROT_SMOOTH = v end
+        UI.Sections.AutoGoalKeeper:Button({
+            Name = "Sync Current Config",
+            Callback = function()
+                -- Update config from UI elements
+                CONFIG.ENABLED = moduleState.uiElements.Enabled:GetState()
+                CONFIG.SPEED = moduleState.uiElements.Speed:GetValue()
+                CONFIG.STAND_DIST = moduleState.uiElements.StandDist:GetValue()
+                CONFIG.DIVE_DIST = moduleState.uiElements.DiveDist:GetValue()
+                CONFIG.DIVE_SPEED = moduleState.uiElements.DiveSpeed:GetValue()
+                CONFIG.DIVE_VEL_THRES = moduleState.uiElements.DiveVelThresh:GetValue()
+                CONFIG.DIVE_COOLDOWN = moduleState.uiElements.DiveCooldown:GetValue()
+                CONFIG.JUMP_VEL_THRES = moduleState.uiElements.JumpVelThresh:GetValue()
+                CONFIG.HIGH_BALL_THRES = moduleState.uiElements.HighBallThresh:GetValue()
+                CONFIG.JUMP_COOLDOWN = moduleState.uiElements.JumpCooldown:GetValue()
+                CONFIG.ZONE_DIST = moduleState.uiElements.ZoneDist:GetValue()
+                CONFIG.ZONE_WIDTH = moduleState.uiElements.ZoneWidth:GetValue()
+                CONFIG.AGGRO_THRES = moduleState.uiElements.AggroThresh:GetValue()
+                CONFIG.MAX_CHASE_DIST = moduleState.uiElements.MaxChaseDist:GetValue()
+                CONFIG.PRIORITY = moduleState.uiElements.Priority:Get()
+                CONFIG.AUTO_ATTACK_IN_ZONE = moduleState.uiElements.AutoAttackInZone:GetState()
+                CONFIG.ATTACK_DISTANCE = moduleState.uiElements.AttackDistance:GetValue()
+                CONFIG.AGGRESSIVE_MODE = moduleState.uiElements.AggressiveMode:GetState()
+                CONFIG.ATTACK_COOLDOWN = moduleState.uiElements.AttackCooldown:GetValue()
+                CONFIG.PRED_STEPS = moduleState.uiElements.PredSteps:GetValue()
+                CONFIG.GRAVITY = moduleState.uiElements.Gravity:GetValue()
+                CONFIG.DRAG = moduleState.uiElements.Drag:GetValue()
+                CONFIG.CURVE_MULT = moduleState.uiElements.CurveMult:GetValue()
+                CONFIG.BOUNCE_XZ = moduleState.uiElements.BounceXZ:GetValue()
+                CONFIG.BOUNCE_Y = moduleState.uiElements.BounceY:GetValue()
+                CONFIG.BALL_INTERCEPT_RANGE = moduleState.uiElements.BallInterceptRange:GetValue()
+                CONFIG.MIN_INTERCEPT_TIME = moduleState.uiElements.MinInterceptTime:GetValue()
+                CONFIG.ADVANCE_DISTANCE = moduleState.uiElements.AdvanceDistance:GetValue()
+                CONFIG.ROT_SMOOTH = moduleState.uiElements.RotSmooth:GetValue()
+                CONFIG.DIVE_LOOK_AHEAD = moduleState.uiElements.DiveLookAhead:GetValue()
+                CONFIG.SHOW_TRAJECTORY = moduleState.uiElements.ShowTrajectory:GetState()
+                CONFIG.SHOW_ENDPOINT = moduleState.uiElements.ShowEndpoint:GetState()
+                CONFIG.SHOW_GOAL_CUBE = moduleState.uiElements.ShowGoalCube:GetState()
+                CONFIG.SHOW_ZONE = moduleState.uiElements.ShowZone:GetState()
+                CONFIG.SHOW_BALL_BOX = moduleState.uiElements.ShowBallBox:GetState()
+                
+                -- Update module state
+                moduleState.enabled = CONFIG.ENABLED
+                
+                -- Restart if needed
+                if CONFIG.ENABLED then
+                    if moduleState.heartbeatConnection then
+                        moduleState.heartbeatConnection:Disconnect()
+                        moduleState.heartbeatConnection = nil
+                    end
+                    createVisuals()
+                    startHeartbeat()
+                end
+                
+                notify("GK Helper", "Configuration synchronized successfully!", true)
+            end
         })
         
         UI.Sections.AutoGoalKeeper:Divider()
         
-        -- Информация
+        -- Information
         UI.Sections.AutoGoalKeeper:Paragraph({
-            Header = "Информация",
-            Body = "GK Helper v46 Advanced Defense\n• Приоритет: defense - защита ворот, attack - атака врагов\n• Auto Attack in Zone: атаковать врагов в защитной зоне\n• Aggressive Mode: постоянно преследовать врага с мячом\n• Исправлен баг с дайвом (не отправляет в космос)\n• Правильная очистка визуалов при смене роли"
+            Header = "GK Helper v46 Information",
+            Body = "Advanced Goalkeeper AI with fixed dive physics\n\n• FIXED DIVE: No more launching into space\n• Priority: defense - protect goal, attack - pressure enemies\n• Auto Attack: attack enemies in defense zone\n• Aggressive Mode: constantly chase enemy with ball\n• Visuals: customizable trajectory and zone indicators\n• Prediction: adjustable physics for accurate ball tracking\n\nUse 'Sync Current Config' to apply all changes"
         })
     end
     
-    notify("GK Helper", "Модуль загружен (версия v46)", true)
+    notify("GK Helper", "Module loaded (v46 with fixed dive)", true)
 end
 
 function GKHelperModule:Destroy()
-    if heartbeatConnection then
-        heartbeatConnection:Disconnect()
-        heartbeatConnection = nil
+    if moduleState.heartbeatConnection then
+        moduleState.heartbeatConnection:Disconnect()
+        moduleState.heartbeatConnection = nil
     end
     cleanup()
     moduleState.enabled = false
