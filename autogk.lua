@@ -1145,7 +1145,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
     -- Create main section in AutoGoalKeeper
     if UI.Sections.AutoGoalKeeper then
         -- BASIC SETTINGS
-        UI.Sections.AutoGoalKeeper:Header({ Name = "AutoGK - Basic Settings" })
+        UI.Sections.AutoGoalKeeper:Header({ Name = "AutoGoalKeeper" })
         
         moduleState.uiElements.Enabled = UI.Sections.AutoGoalKeeper:Toggle({ 
             Name = "Enabled", 
@@ -1635,3 +1635,4 @@ function GKHelperModule:Destroy()
 end
 
 return GKHelperModule
+
