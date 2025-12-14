@@ -197,9 +197,9 @@ function Visuals.Init(UI, Core, notify)
         buttonIcon.Visible = false
         
         -- Устанавливаем размер и позицию
-        buttonFrame.Size = UDim2.new(0, 56, 0, 56) -- Увеличиваем для круглого фона
+        buttonFrame.Size = UDim2.new(0, 52, 0, 52) -- Увеличиваем для круглого фона
         buttonFrame.Position = currentPos -- Сохраняем текущую позицию
-        buttonFrame.BackgroundColor3 = Color3.fromRGB(40, 80, 140) -- Более яркий синий
+        buttonFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 50) -- Более яркий синий
         buttonFrame.BackgroundTransparency = 0.7 -- Более прозрачный фон
         
         -- Круглый фон (как в Default)
@@ -216,8 +216,8 @@ function Visuals.Init(UI, Core, notify)
         iconContainer.Size = UDim2.new(0, 40, 0, 40) -- Увеличиваем размер для лучшей видимости
         -- Центрирование: 20 = 40/2
         iconContainer.Position = UDim2.new(0.5, -20, 0.5, -20) -- Идеально по центру
-        iconContainer.BackgroundColor3 = Color3.fromRGB(60, 100, 180) -- Яркий синий цвет
-        iconContainer.BackgroundTransparency = 0.1 -- Почти непрозрачный
+        iconContainer.BackgroundColor3 = Color3.fromRGB(20, 30, 60) -- Яркий синий цвет
+        iconContainer.BackgroundTransparency = 0.25 -- Почти непрозрачный
         iconContainer.BorderSizePixel = 0
         iconContainer.Parent = buttonFrame
         
