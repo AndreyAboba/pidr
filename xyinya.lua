@@ -197,42 +197,49 @@ function Visuals.Init(UI, Core, notify)
         buttonIcon.Visible = false
         
         -- Устанавливаем размер и позицию
-        buttonFrame.Size = UDim2.new(0, 70, 0, 32)
+        buttonFrame.Size = UDim2.new(0, 56, 0, 56) -- Увеличиваем для круглого фона
         buttonFrame.Position = currentPos -- Сохраняем текущую позицию
-        buttonFrame.BackgroundColor3 = Color3.fromRGB(40, 60, 100)
-        buttonFrame.BackgroundTransparency = 0.6 -- Более прозрачный фон
+        buttonFrame.BackgroundColor3 = Color3.fromRGB(40, 80, 140) -- Более яркий синий
+        buttonFrame.BackgroundTransparency = 0.7 -- Более прозрачный фон
         
-        -- Скругленные углы
+        -- Круглый фон (как в Default)
         local corner = buttonFrame:FindFirstChild("UICorner")
         if corner then
-            corner.CornerRadius = UDim.new(0, 16)
+            corner.CornerRadius = UDim.new(0.5, 0) -- Полностью круглый
         else
-            Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0, 16)
+            Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0.5, 0)
         end
         
-        -- Отдельный фрейм для иконки (размер 34x34, центрирован)
+        -- Отдельный фрейм для иконки (круглый контейнер)
         local iconContainer = Instance.new("Frame")
         iconContainer.Name = "IconContainer"
-        iconContainer.Size = UDim2.new(0, 34, 0, 34) -- Размер 34x34
-        -- Центрирование: 17 = 34/2
-        iconContainer.Position = UDim2.new(0.5, -17, 0.5, -17) -- Идеально по центру
-        iconContainer.BackgroundColor3 = Color3.fromRGB(25, 40, 70) -- Темнее чем фон
-        iconContainer.BackgroundTransparency = 0.2 -- Менее прозрачный (0.2 вместо 0.4)
+        iconContainer.Size = UDim2.new(0, 40, 0, 40) -- Увеличиваем размер для лучшей видимости
+        -- Центрирование: 20 = 40/2
+        iconContainer.Position = UDim2.new(0.5, -20, 0.5, -20) -- Идеально по центру
+        iconContainer.BackgroundColor3 = Color3.fromRGB(60, 100, 180) -- Яркий синий цвет
+        iconContainer.BackgroundTransparency = 0.1 -- Почти непрозрачный
         iconContainer.BorderSizePixel = 0
         iconContainer.Parent = buttonFrame
         
         local iconCorner = Instance.new("UICorner")
-        iconCorner.CornerRadius = UDim.new(0, 8) -- Меньше скругление для меньшего размера
+        iconCorner.CornerRadius = UDim.new(0.5, 0) -- Полностью круглый
         iconCorner.Parent = iconContainer
+        
+        -- Тень/обводка для контейнера
+        local uiStroke = Instance.new("UIStroke")
+        uiStroke.Color = Color3.fromRGB(100, 150, 220)
+        uiStroke.Thickness = 1.5
+        uiStroke.Transparency = 0.3
+        uiStroke.Parent = iconContainer
         
         -- Создаем новую иконку внутри контейнера
         local newIcon = Instance.new("ImageLabel")
         newIcon.Name = "DefaultV2Icon"
-        newIcon.Size = UDim2.new(0, 24, 0, 24) -- Чуть меньше для 34x34 контейнера
-        newIcon.Position = UDim2.new(0.5, -12, 0.5, -12) -- Центрируем в контейнере
+        newIcon.Size = UDim2.new(0, 28, 0, 28) -- Чуть меньше для 40x40 контейнера
+        newIcon.Position = UDim2.new(0.5, -14, 0.5, -14) -- Центрируем в контейнере
         newIcon.BackgroundTransparency = 1
         newIcon.Image = "rbxassetid://73279554401260"
-        newIcon.ImageColor3 = Color3.fromRGB(240, 245, 255) -- Яркая иконка на темном фоне
+        newIcon.ImageColor3 = Color3.fromRGB(255, 255, 255) -- Белая иконка
         newIcon.Parent = iconContainer
         
         -- Локальная переменная для анимации
@@ -240,57 +247,50 @@ function Visuals.Init(UI, Core, notify)
         local lastClickTime = 0
         local clickCooldown = 0.3 -- Задержка между кликами для предотвращения спама
         
-        -- Эффект при нажатии (правильная анимация) - только при коротком нажатии (не перетаскивании)
-        local function onPress()
-            -- Проверяем что мы не в процессе перетаскивания и не слишком часто нажимаем
-            if State.MenuButton.CurrentDesign ~= "Default v2" or isAnimating or State.MenuButton.Dragging then 
-                return 
-            end
+        -- Функция анимации нажатия
+        local function playClickAnimation()
+            if isAnimating then return end
             
-            local currentTime = tick()
-            if currentTime - lastClickTime < clickCooldown then
-                return -- Слишком частые нажатия игнорируем
-            end
-            
-            lastClickTime = currentTime
             isAnimating = true
+            local startTime = tick()
+            local animationDuration = 0.2
             
-            -- Анимация нажатия (уменьшение размера и увеличение прозрачности)
+            -- Сохраняем оригинальные значения
             local originalSize = iconContainer.Size
             local originalPos = iconContainer.Position
+            local originalBackgroundTransparency = iconContainer.BackgroundTransparency
             
-            -- Эффект "вдавливания" - равномерное уменьшение
-            for i = 0, 1, 0.1 do
-                if State.MenuButton.CurrentDesign ~= "Default v2" or State.MenuButton.Dragging then break end
-                local scale = 1 - (i * 0.15) -- Уменьшение на 15%
+            -- Анимация
+            while tick() - startTime < animationDuration do
+                if State.MenuButton.CurrentDesign ~= "Default v2" then break end
+                
+                local elapsed = tick() - startTime
+                local progress = elapsed / animationDuration
+                
+                -- Эффект "пульсации" - сначала уменьшение, потом возврат
+                local scale
+                if progress < 0.5 then
+                    scale = 1 - (progress * 0.2) -- Уменьшаем до 80%
+                else
+                    scale = 0.8 + ((progress - 0.5) * 0.4) -- Возвращаем к 100%
+                end
+                
                 iconContainer.Size = UDim2.new(0, originalSize.X.Offset * scale, 0, originalSize.Y.Offset * scale)
                 iconContainer.Position = UDim2.new(
                     0.5, -originalSize.X.Offset * scale / 2,
                     0.5, -originalSize.Y.Offset * scale / 2
                 )
-                iconContainer.BackgroundTransparency = 0.2 + (i * 0.3) -- Увеличение прозрачности
-                task.wait(0.01)
+                
+                -- Легкое изменение прозрачности
+                iconContainer.BackgroundTransparency = originalBackgroundTransparency + (progress < 0.5 and progress * 0.1 or (0.1 - (progress - 0.5) * 0.2))
+                
+                task.wait()
             end
-            
-            task.wait(0.05)
             
             -- Возвращаем к исходному состоянию
-            for i = 0, 1, 0.05 do
-                if State.MenuButton.CurrentDesign ~= "Default v2" or State.MenuButton.Dragging then break end
-                local scale = 0.85 + (i * 0.15) -- Возврат к 100%
-                iconContainer.Size = UDim2.new(0, originalSize.X.Offset * scale, 0, originalSize.Y.Offset * scale)
-                iconContainer.Position = UDim2.new(
-                    0.5, -originalSize.X.Offset * scale / 2,
-                    0.5, -originalSize.Y.Offset * scale / 2
-                )
-                iconContainer.BackgroundTransparency = 0.5 - (i * 0.3) -- Возврат прозрачности
-                task.wait(0.01)
-            end
-            
-            -- Финишная коррекция
             iconContainer.Size = originalSize
             iconContainer.Position = originalPos
-            iconContainer.BackgroundTransparency = 0.2
+            iconContainer.BackgroundTransparency = originalBackgroundTransparency
             
             isAnimating = false
         end
@@ -301,7 +301,9 @@ function Visuals.Init(UI, Core, notify)
             if State.MenuButton.CurrentDesign == "Default v2" and 
                (input.UserInputType == Enum.UserInputType.MouseButton1 or 
                 input.UserInputType == Enum.UserInputType.Touch) then
-                onPress()
+                
+                -- Запускаем анимацию нажатия сразу
+                playClickAnimation()
             end
         end)
         
