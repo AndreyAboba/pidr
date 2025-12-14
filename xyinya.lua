@@ -1,5 +1,5 @@
 local Visuals = {}
-print('4')
+print('5')
 
 function Visuals.Init(UI, Core, notify)
     local State = {
@@ -935,7 +935,7 @@ function Visuals.Init(UI, Core, notify)
         end
         
         -- Информация (страна/устройство) идет между именем и барами/текстом
-        positions.Info = positions.Name + 10 * textScale
+        positions.Info = positions.Name + 20 * textScale
         
         -- Проверка границ экрана
         for name, y in pairs(positions) do
