@@ -1061,6 +1061,78 @@ local function startHeartbeat()
 end
 
 -- GK Helper Module
+local function syncConfig()
+    -- Update config from UI elements
+    CONFIG.ENABLED = moduleState.uiElements.Enabled and moduleState.uiElements.Enabled:GetState()
+    CONFIG.SPEED = moduleState.uiElements.Speed and moduleState.uiElements.Speed:GetValue()
+    CONFIG.STAND_DIST = moduleState.uiElements.StandDist and moduleState.uiElements.StandDist:GetValue()
+    CONFIG.DIVE_DIST = moduleState.uiElements.DiveDist and moduleState.uiElements.DiveDist:GetValue()
+    CONFIG.ENDPOINT_DIVE = moduleState.uiElements.EndpointDive and moduleState.uiElements.EndpointDive:GetValue()
+    CONFIG.TOUCH_RANGE = moduleState.uiElements.TouchRange and moduleState.uiElements.TouchRange:GetValue()
+    CONFIG.NEAR_BALL_DIST = moduleState.uiElements.NearBallDist and moduleState.uiElements.NearBallDist:GetValue()
+    CONFIG.DIVE_SPEED = moduleState.uiElements.DiveSpeed and moduleState.uiElements.DiveSpeed:GetValue()
+    CONFIG.DIVE_VEL_THRES = moduleState.uiElements.DiveVelThresh and moduleState.uiElements.DiveVelThresh:GetValue()
+    CONFIG.DIVE_COOLDOWN = moduleState.uiElements.DiveCooldown and moduleState.uiElements.DiveCooldown:GetValue()
+    CONFIG.JUMP_VEL_THRES = moduleState.uiElements.JumpVelThresh and moduleState.uiElements.JumpVelThresh:GetValue()
+    CONFIG.HIGH_BALL_THRES = moduleState.uiElements.HighBallThresh and moduleState.uiElements.HighBallThresh:GetValue()
+    CONFIG.JUMP_COOLDOWN = moduleState.uiElements.JumpCooldown and moduleState.uiElements.JumpCooldown:GetValue()
+    CONFIG.ZONE_DIST = moduleState.uiElements.ZoneDist and moduleState.uiElements.ZoneDist:GetValue()
+    CONFIG.ZONE_WIDTH = moduleState.uiElements.ZoneWidth and moduleState.uiElements.ZoneWidth:GetValue()
+    CONFIG.AGGRO_THRES = moduleState.uiElements.AggroThresh and moduleState.uiElements.AggroThresh:GetValue()
+    CONFIG.MAX_CHASE_DIST = moduleState.uiElements.MaxChaseDist and moduleState.uiElements.MaxChaseDist:GetValue()
+    CONFIG.GATE_COVERAGE = moduleState.uiElements.GateCoverage and moduleState.uiElements.GateCoverage:GetValue()
+    CONFIG.LATERAL_MAX_MULT = moduleState.uiElements.LateralMaxMult and moduleState.uiElements.LateralMaxMult:GetValue()
+    CONFIG.AUTO_ATTACK_IN_ZONE = moduleState.uiElements.AutoAttackInZone and moduleState.uiElements.AutoAttackInZone:GetState()
+    CONFIG.ATTACK_DISTANCE = moduleState.uiElements.AttackDistance and moduleState.uiElements.AttackDistance:GetValue()
+    CONFIG.ATTACK_COOLDOWN = moduleState.uiElements.AttackCooldown and moduleState.uiElements.AttackCooldown:GetValue()
+    CONFIG.PRED_STEPS = moduleState.uiElements.PredSteps and moduleState.uiElements.PredSteps:GetValue()
+    CONFIG.GRAVITY = moduleState.uiElements.Gravity and moduleState.uiElements.Gravity:GetValue()
+    CONFIG.DRAG = moduleState.uiElements.Drag and moduleState.uiElements.Drag:GetValue()
+    CONFIG.CURVE_MULT = moduleState.uiElements.CurveMult and moduleState.uiElements.CurveMult:GetValue()
+    CONFIG.BOUNCE_XZ = moduleState.uiElements.BounceXZ and moduleState.uiElements.BounceXZ:GetValue()
+    CONFIG.BOUNCE_Y = moduleState.uiElements.BounceY and moduleState.uiElements.BounceY:GetValue()
+    CONFIG.BALL_INTERCEPT_RANGE = moduleState.uiElements.BallInterceptRange and moduleState.uiElements.BallInterceptRange:GetValue()
+    CONFIG.MIN_INTERCEPT_TIME = moduleState.uiElements.MinInterceptTime and moduleState.uiElements.MinInterceptTime:GetValue()
+    CONFIG.ADVANCE_DISTANCE = moduleState.uiElements.AdvanceDistance and moduleState.uiElements.AdvanceDistance:GetValue()
+    CONFIG.ROT_SMOOTH = moduleState.uiElements.RotSmooth and moduleState.uiElements.RotSmooth:GetValue()
+    CONFIG.DIVE_LOOK_AHEAD = moduleState.uiElements.DiveLookAhead and moduleState.uiElements.DiveLookAhead:GetValue()
+    CONFIG.SHOW_TRAJECTORY = moduleState.uiElements.ShowTrajectory and moduleState.uiElements.ShowTrajectory:GetState()
+    CONFIG.SHOW_ENDPOINT = moduleState.uiElements.ShowEndpoint and moduleState.uiElements.ShowEndpoint:GetState()
+    CONFIG.SHOW_GOAL_CUBE = moduleState.uiElements.ShowGoalCube and moduleState.uiElements.ShowGoalCube:GetState()
+    CONFIG.SHOW_ZONE = moduleState.uiElements.ShowZone and moduleState.uiElements.ShowZone:GetState()
+    CONFIG.SHOW_BALL_BOX = moduleState.uiElements.ShowBallBox and moduleState.uiElements.ShowBallBox:GetState()
+    
+    -- Update module state
+    moduleState.enabled = CONFIG.ENABLED
+    
+    -- Restart if needed
+    if CONFIG.ENABLED then
+        if moduleState.heartbeatConnection then
+            moduleState.heartbeatConnection:Disconnect()
+            moduleState.heartbeatConnection = nil
+        end
+        createVisuals()
+        startHeartbeat()
+        if moduleState.notify then
+            moduleState.notify("AutoGK", "Enabled with synced config", true)
+        end
+    else
+        if moduleState.heartbeatConnection then
+            moduleState.heartbeatConnection:Disconnect()
+            moduleState.heartbeatConnection = nil
+        end
+        cleanup()
+        if moduleState.notify then
+            moduleState.notify("AutoGK", "Disabled", true)
+        end
+    end
+    
+    if moduleState.notify then
+        moduleState.notify("AutoGK", "Configuration synchronized successfully!", true)
+    end
+end
+
+-- GK Helper Module
 local GKHelperModule = {}
 
 function GKHelperModule.Init(UI, coreParam, notifyFunc)
@@ -1070,10 +1142,10 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
     -- Store notify function for later use
     moduleState.notify = notifyFunc
     
-    -- Create UI sections
+    -- Create main section in AutoGoalKeeper
     if UI.Sections.AutoGoalKeeper then
         -- BASIC SETTINGS
-        UI.Sections.AutoGoalKeeper:Header({ Name = "GK Helper v46 - Basic Settings" })
+        UI.Sections.AutoGoalKeeper:Header({ Name = "AutoGK - Basic Settings" })
         
         moduleState.uiElements.Enabled = UI.Sections.AutoGoalKeeper:Toggle({ 
             Name = "Enabled", 
@@ -1084,29 +1156,29 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
                 if v then
                     createVisuals()
                     startHeartbeat()
-                    notify("GK Helper", "Enabled", true)
+                    notify("AutoGK", "Enabled", true)
                 else
                     if moduleState.heartbeatConnection then
                         moduleState.heartbeatConnection:Disconnect()
                         moduleState.heartbeatConnection = nil
                     end
                     cleanup()
-                    notify("GK Helper", "Disabled", true)
+                    notify("AutoGK", "Disabled", true)
                 end
             end
-        })
+        }, 'AutoGKEnabled')
         
         UI.Sections.AutoGoalKeeper:Divider()
         
         -- Movement Settings
         moduleState.uiElements.Speed = UI.Sections.AutoGoalKeeper:Slider({
-            Name = "Speed",
+            Name = "Movement Speed",
             Minimum = 20,
             Maximum = 50,
             Default = CONFIG.SPEED,
             Precision = 1,
             Callback = function(v) CONFIG.SPEED = v end
-        })
+        }, 'AutoGKMovementSpeed')
         
         moduleState.uiElements.StandDist = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Stand Distance",
@@ -1115,22 +1187,49 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Default = CONFIG.STAND_DIST,
             Precision = 1,
             Callback = function(v) CONFIG.STAND_DIST = v end
-        })
+        }, 'StandDistanceGK')
         
         UI.Sections.AutoGoalKeeper:Divider()
         
         -- ADVVANCED SETTINGS SECTION
-        UI.Sections.AutoGoalKeeper:Header({ Name = "Advanced Settings" })
+        UI.Sections.AutoGoalKeeper:Header({ Name = "Dive & Jump Settings" })
         
         -- Dive Settings
         moduleState.uiElements.DiveDist = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Dive Distance",
             Minimum = 5,
-            Maximum = 20,
+            Maximum = 25,
             Default = CONFIG.DIVE_DIST,
             Precision = 1,
             Callback = function(v) CONFIG.DIVE_DIST = v end
-        })
+        }, 'DiveDistanceGK')
+        
+        moduleState.uiElements.EndpointDive = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Endpoint Dive Distance",
+            Minimum = 2,
+            Maximum = 16,
+            Default = CONFIG.ENDPOINT_DIVE,
+            Precision = 1,
+            Callback = function(v) CONFIG.ENDPOINT_DIVE = v end
+        }, 'EndpointDiveDistanceGK')
+        
+        moduleState.uiElements.TouchRange = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Hand Touch Range",
+            Minimum = 5.0,
+            Maximum = 20.0,
+            Default = CONFIG.TOUCH_RANGE,
+            Precision = 1,
+            Callback = function(v) CONFIG.TOUCH_RANGE = v end
+        }, 'HandTouchRangeGK')
+        
+        moduleState.uiElements.NearBallDist = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Near Ball Distance",
+            Minimum = 3.0,
+            Maximum = 16.0,
+            Default = CONFIG.NEAR_BALL_DIST,
+            Precision = 1,
+            Callback = function(v) CONFIG.NEAR_BALL_DIST = v end
+        }, 'NearBallDistanceGK')
         
         moduleState.uiElements.DiveSpeed = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Dive Speed",
@@ -1139,7 +1238,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Default = CONFIG.DIVE_SPEED,
             Precision = 1,
             Callback = function(v) CONFIG.DIVE_SPEED = v end
-        })
+        }, 'DiveSpeedGK')
         
         moduleState.uiElements.DiveVelThresh = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Dive Velocity Threshold",
@@ -1148,7 +1247,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Default = CONFIG.DIVE_VEL_THRES,
             Precision = 1,
             Callback = function(v) CONFIG.DIVE_VEL_THRES = v end
-        })
+        }, 'DiveVelocityGK')
         
         moduleState.uiElements.DiveCooldown = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Dive Cooldown",
@@ -1157,7 +1256,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Default = CONFIG.DIVE_COOLDOWN,
             Precision = 1,
             Callback = function(v) CONFIG.DIVE_COOLDOWN = v end
-        })
+        }, 'DiveCDGK')
         
         UI.Sections.AutoGoalKeeper:Divider()
         
@@ -1169,16 +1268,16 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Default = CONFIG.JUMP_VEL_THRES,
             Precision = 1,
             Callback = function(v) CONFIG.JUMP_VEL_THRES = v end
-        })
+        }, 'JumpVelocityGK')
         
         moduleState.uiElements.HighBallThresh = UI.Sections.AutoGoalKeeper:Slider({
             Name = "High Ball Threshold",
             Minimum = 4.0,
-            Maximum = 10.0,
+            Maximum = 16.0,
             Default = CONFIG.HIGH_BALL_THRES,
             Precision = 1,
             Callback = function(v) CONFIG.HIGH_BALL_THRES = v end
-        })
+        }, 'HighBallGk')
         
         moduleState.uiElements.JumpCooldown = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Jump Cooldown",
@@ -1187,7 +1286,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Default = CONFIG.JUMP_COOLDOWN,
             Precision = 1,
             Callback = function(v) CONFIG.JUMP_COOLDOWN = v end
-        })
+        }, 'JMPCDGK')
         
         UI.Sections.AutoGoalKeeper:Divider()
         
@@ -1197,38 +1296,56 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
         moduleState.uiElements.ZoneDist = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Zone Distance",
             Minimum = 30,
-            Maximum = 100,
+            Maximum = 200,
             Default = CONFIG.ZONE_DIST,
             Precision = 1,
             Callback = function(v) CONFIG.ZONE_DIST = v end
-        })
+        }, 'ZONEDISTGK')
         
         moduleState.uiElements.ZoneWidth = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Zone Width Multiplier",
             Minimum = 1.0,
-            Maximum = 3.0,
+            Maximum = 5.0,
             Default = CONFIG.ZONE_WIDTH,
             Precision = 1,
             Callback = function(v) CONFIG.ZONE_WIDTH = v end
-        })
+        }, 'ZONEWIDTHGK')
         
         moduleState.uiElements.AggroThresh = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Aggro Threshold",
             Minimum = 20,
-            Maximum = 60,
+            Maximum = 80,
             Default = CONFIG.AGGRO_THRES,
             Precision = 1,
             Callback = function(v) CONFIG.AGGRO_THRES = v end
-        })
+        }, 'AGGROTHRESGK')
         
         moduleState.uiElements.MaxChaseDist = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Max Chase Distance",
             Minimum = 20,
-            Maximum = 60,
+            Maximum = 80,
             Default = CONFIG.MAX_CHASE_DIST,
             Precision = 1,
             Callback = function(v) CONFIG.MAX_CHASE_DIST = v end
-        })
+        }, 'MAXCHADEDISTGK')
+        
+        moduleState.uiElements.GateCoverage = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Goal Coverage",
+            Minimum = 0.5,
+            Maximum = 1.0,
+            Default = CONFIG.GATE_COVERAGE,
+            Precision = 2,
+            Callback = function(v) CONFIG.GATE_COVERAGE = v end
+        }, 'GOALCOVERAGEGK')
+        
+        moduleState.uiElements.LateralMaxMult = UI.Sections.AutoGoalKeeper:Slider({
+            Name = "Lateral Movement Multiplier",
+            Minimum = 0.2,
+            Maximum = 0.8,
+            Default = CONFIG.LATERAL_MAX_MULT,
+            Precision = 2,
+            Callback = function(v) CONFIG.LATERAL_MAX_MULT = v end
+        }, 'LATERALMOVEMENTMULTIGK')
         
         UI.Sections.AutoGoalKeeper:Divider()
         
@@ -1240,28 +1357,22 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Default = CONFIG.PRIORITY,
             Options = {"defense", "attack"},
             Callback = function(v) CONFIG.PRIORITY = v end
-        })
+        }, 'PRIOTIRYGK')
         
         moduleState.uiElements.AutoAttackInZone = UI.Sections.AutoGoalKeeper:Toggle({
             Name = "Auto Attack in Zone",
             Default = CONFIG.AUTO_ATTACK_IN_ZONE,
             Callback = function(v) CONFIG.AUTO_ATTACK_IN_ZONE = v end
-        })
+        }, 'AUTOTAATACKINZONEGK')
         
         moduleState.uiElements.AttackDistance = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Attack Distance",
             Minimum = 20,
-            Maximum = 50,
+            Maximum = 80,
             Default = CONFIG.ATTACK_DISTANCE,
             Precision = 1,
             Callback = function(v) CONFIG.ATTACK_DISTANCE = v end
-        })
-        
-        moduleState.uiElements.AggressiveMode = UI.Sections.AutoGoalKeeper:Toggle({
-            Name = "Aggressive Mode",
-            Default = CONFIG.AGGRESSIVE_MODE,
-            Callback = function(v) CONFIG.AGGRESSIVE_MODE = v end
-        })
+        }, 'ATTACKDISTGK')
         
         moduleState.uiElements.AttackCooldown = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Attack Cooldown",
@@ -1270,7 +1381,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Default = CONFIG.ATTACK_COOLDOWN,
             Precision = 1,
             Callback = function(v) CONFIG.ATTACK_COOLDOWN = v end
-        })
+        }, 'ATTACKCDGK')
         
         UI.Sections.AutoGoalKeeper:Divider()
         
@@ -1284,16 +1395,16 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Default = CONFIG.PRED_STEPS,
             Precision = 0,
             Callback = function(v) CONFIG.PRED_STEPS = v end
-        })
+        }, 'PREDSTEPSGK')
         
         moduleState.uiElements.Gravity = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Gravity",
             Minimum = 80,
-            Maximum = 140,
+            Maximum = 168,
             Default = CONFIG.GRAVITY,
             Precision = 1,
             Callback = function(v) CONFIG.GRAVITY = v end
-        })
+        }, 'GRAVITYGK')
         
         moduleState.uiElements.Drag = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Air Drag",
@@ -1302,7 +1413,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Default = CONFIG.DRAG,
             Precision = 3,
             Callback = function(v) CONFIG.DRAG = v end
-        })
+        }, 'AIRDRAGGK')
         
         moduleState.uiElements.CurveMult = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Curve Multiplier",
@@ -1311,7 +1422,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Default = CONFIG.CURVE_MULT,
             Precision = 1,
             Callback = function(v) CONFIG.CURVE_MULT = v end
-        })
+        }, 'CURVEMULTIGK')
         
         moduleState.uiElements.BounceXZ = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Horizontal Bounce",
@@ -1320,7 +1431,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Default = CONFIG.BOUNCE_XZ,
             Precision = 2,
             Callback = function(v) CONFIG.BOUNCE_XZ = v end
-        })
+        }, 'HORIZONTALBOUNCEGK')
         
         moduleState.uiElements.BounceY = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Vertical Bounce",
@@ -1329,7 +1440,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Default = CONFIG.BOUNCE_Y,
             Precision = 2,
             Callback = function(v) CONFIG.BOUNCE_Y = v end
-        })
+        }, 'VERTICALBOUNCEGK')
         
         UI.Sections.AutoGoalKeeper:Divider()
         
@@ -1339,11 +1450,11 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
         moduleState.uiElements.BallInterceptRange = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Ball Intercept Range",
             Minimum = 2.0,
-            Maximum = 8.0,
+            Maximum = 12.0,
             Default = CONFIG.BALL_INTERCEPT_RANGE,
             Precision = 1,
             Callback = function(v) CONFIG.BALL_INTERCEPT_RANGE = v end
-        })
+        }, 'BALLINTERCEPTRANGEGK')
         
         moduleState.uiElements.MinInterceptTime = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Min Intercept Time",
@@ -1352,16 +1463,16 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Default = CONFIG.MIN_INTERCEPT_TIME,
             Precision = 2,
             Callback = function(v) CONFIG.MIN_INTERCEPT_TIME = v end
-        })
+        }, 'MININTERCEPTTIMEGK')
         
         moduleState.uiElements.AdvanceDistance = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Advance Distance",
             Minimum = 1.0,
-            Maximum = 6.0,
+            Maximum = 8.0,
             Default = CONFIG.ADVANCE_DISTANCE,
             Precision = 1,
             Callback = function(v) CONFIG.ADVANCE_DISTANCE = v end
-        })
+        }, 'ADVANCEDISTGK')
         
         moduleState.uiElements.RotSmooth = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Rotation Smoothness",
@@ -1370,7 +1481,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Default = CONFIG.ROT_SMOOTH,
             Precision = 2,
             Callback = function(v) CONFIG.ROT_SMOOTH = v end
-        })
+        }, 'ROTSMOOTHGK')
         
         moduleState.uiElements.DiveLookAhead = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Dive Look Ahead",
@@ -1379,7 +1490,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Default = CONFIG.DIVE_LOOK_AHEAD,
             Precision = 2,
             Callback = function(v) CONFIG.DIVE_LOOK_AHEAD = v end
-        })
+        }, 'DIVELOOKAHEADGK')
         
         UI.Sections.AutoGoalKeeper:Divider()
         
@@ -1395,7 +1506,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
                     createVisuals()
                 end
             end
-        })
+        }, 'SHOWTRAJECTORYGK')
         
         moduleState.uiElements.ShowEndpoint = UI.Sections.AutoGoalKeeper:Toggle({
             Name = "Show Endpoint",
@@ -1406,7 +1517,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
                     createVisuals()
                 end
             end
-        })
+        }, 'SHOWENDPOINTGK')
         
         moduleState.uiElements.ShowGoalCube = UI.Sections.AutoGoalKeeper:Toggle({
             Name = "Show Goal Cube",
@@ -1417,7 +1528,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
                     createVisuals()
                 end
             end
-        })
+        }, 'SHOWGOALCUBEGK')
         
         moduleState.uiElements.ShowZone = UI.Sections.AutoGoalKeeper:Toggle({
             Name = "Show Zone",
@@ -1439,80 +1550,79 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
                     createVisuals()
                 end
             end
-        })
+        }, 'SHOWBALLBOXGK')
         
         UI.Sections.AutoGoalKeeper:Divider()
         
-        -- SYNC CONFIG SECTION
-        UI.Sections.AutoGoalKeeper:Header({ Name = "Config Management" })
+        -- Information Section
+        UI.Sections.AutoGoalKeeper:Header({ Name = "Information" })
         
-        UI.Sections.AutoGoalKeeper:Button({
-            Name = "Sync Current Config",
-            Callback = function()
-                -- Update config from UI elements
-                CONFIG.ENABLED = moduleState.uiElements.Enabled:GetState()
-                CONFIG.SPEED = moduleState.uiElements.Speed:GetValue()
-                CONFIG.STAND_DIST = moduleState.uiElements.StandDist:GetValue()
-                CONFIG.DIVE_DIST = moduleState.uiElements.DiveDist:GetValue()
-                CONFIG.DIVE_SPEED = moduleState.uiElements.DiveSpeed:GetValue()
-                CONFIG.DIVE_VEL_THRES = moduleState.uiElements.DiveVelThresh:GetValue()
-                CONFIG.DIVE_COOLDOWN = moduleState.uiElements.DiveCooldown:GetValue()
-                CONFIG.JUMP_VEL_THRES = moduleState.uiElements.JumpVelThresh:GetValue()
-                CONFIG.HIGH_BALL_THRES = moduleState.uiElements.HighBallThresh:GetValue()
-                CONFIG.JUMP_COOLDOWN = moduleState.uiElements.JumpCooldown:GetValue()
-                CONFIG.ZONE_DIST = moduleState.uiElements.ZoneDist:GetValue()
-                CONFIG.ZONE_WIDTH = moduleState.uiElements.ZoneWidth:GetValue()
-                CONFIG.AGGRO_THRES = moduleState.uiElements.AggroThresh:GetValue()
-                CONFIG.MAX_CHASE_DIST = moduleState.uiElements.MaxChaseDist:GetValue()
-                CONFIG.PRIORITY = moduleState.uiElements.Priority:Get()
-                CONFIG.AUTO_ATTACK_IN_ZONE = moduleState.uiElements.AutoAttackInZone:GetState()
-                CONFIG.ATTACK_DISTANCE = moduleState.uiElements.AttackDistance:GetValue()
-                CONFIG.AGGRESSIVE_MODE = moduleState.uiElements.AggressiveMode:GetState()
-                CONFIG.ATTACK_COOLDOWN = moduleState.uiElements.AttackCooldown:GetValue()
-                CONFIG.PRED_STEPS = moduleState.uiElements.PredSteps:GetValue()
-                CONFIG.GRAVITY = moduleState.uiElements.Gravity:GetValue()
-                CONFIG.DRAG = moduleState.uiElements.Drag:GetValue()
-                CONFIG.CURVE_MULT = moduleState.uiElements.CurveMult:GetValue()
-                CONFIG.BOUNCE_XZ = moduleState.uiElements.BounceXZ:GetValue()
-                CONFIG.BOUNCE_Y = moduleState.uiElements.BounceY:GetValue()
-                CONFIG.BALL_INTERCEPT_RANGE = moduleState.uiElements.BallInterceptRange:GetValue()
-                CONFIG.MIN_INTERCEPT_TIME = moduleState.uiElements.MinInterceptTime:GetValue()
-                CONFIG.ADVANCE_DISTANCE = moduleState.uiElements.AdvanceDistance:GetValue()
-                CONFIG.ROT_SMOOTH = moduleState.uiElements.RotSmooth:GetValue()
-                CONFIG.DIVE_LOOK_AHEAD = moduleState.uiElements.DiveLookAhead:GetValue()
-                CONFIG.SHOW_TRAJECTORY = moduleState.uiElements.ShowTrajectory:GetState()
-                CONFIG.SHOW_ENDPOINT = moduleState.uiElements.ShowEndpoint:GetState()
-                CONFIG.SHOW_GOAL_CUBE = moduleState.uiElements.ShowGoalCube:GetState()
-                CONFIG.SHOW_ZONE = moduleState.uiElements.ShowZone:GetState()
-                CONFIG.SHOW_BALL_BOX = moduleState.uiElements.ShowBallBox:GetState()
-                
-                -- Update module state
-                moduleState.enabled = CONFIG.ENABLED
-                
-                -- Restart if needed
-                if CONFIG.ENABLED then
-                    if moduleState.heartbeatConnection then
-                        moduleState.heartbeatConnection:Disconnect()
-                        moduleState.heartbeatConnection = nil
-                    end
-                    createVisuals()
-                    startHeartbeat()
-                end
-                
-                notify("GK Helper", "Configuration synchronized successfully!", true)
-            end
-        })
-        
-        UI.Sections.AutoGoalKeeper:Divider()
-        
-        -- Information
         UI.Sections.AutoGoalKeeper:Paragraph({
-            Header = "GK Helper v46 Information",
-            Body = "Advanced Goalkeeper AI with fixed dive physics\n\n• FIXED DIVE: No more launching into space\n• Priority: defense - protect goal, attack - pressure enemies\n• Auto Attack: attack enemies in defense zone\n• Aggressive Mode: constantly chase enemy with ball\n• Visuals: customizable trajectory and zone indicators\n• Prediction: adjustable physics for accurate ball tracking\n\nUse 'Sync Current Config' to apply all changes"
+            Header = "AutoGK V1.3 - Settings Explanation",
+            Body = [[
+BASIC SETTINGS:
+0 Movement Speed: How fast the goalkeeper moves
+1 Stand Distance: Default distance from goal when idle
+
+DIVE & JUMP:
+2 Dive Distance: Max distance to perform a dive
+3 Endpoint Dive: Distance to predicted ball endpoint for dive
+4 Hand Touch Range: Distance for automatic ball touching
+5 Near Ball Distance: Distance considered "close" to ball
+6 Dive Speed: Speed of dive movement
+7 Dive Velocity Threshold: Minimum ball speed to trigger dive
+8 Jump Velocity Threshold: Minimum ball speed to trigger jump
+9 High Ball Threshold: Ball height that requires a jump
+
+DEFENSE ZONE:
+10 Zone Distance: Depth of green defense zone
+11 Zone Width: Width of defense zone relative to goal
+12 Aggro Threshold: Distance to enemy for aggressive mode
+13 Max Chase Distance: Maximum distance to chase enemies
+14 Goal Coverage: How much of goal to cover (1.0 = full)
+15 Lateral Movement: Side-to-side movement multiplier
+
+ATTACK SETTINGS:
+16 Priority: Defense = protect goal, Attack = pressure enemies
+17 Auto Attack in Zone: Attack enemies inside defense zone
+18 Attack Distance: Distance to approach enemy for blocking
+19 Attack Cooldown: Time between attack target changes
+
+PREDICTION:
+20 Prediction Steps: Accuracy of ball trajectory prediction
+21 Gravity: Ball gravity in prediction
+22 Air Drag: Air resistance for ball
+23 Curve Multiplier: How much curve affects trajectory
+24 Bounce settings: How ball bounces off surfaces
+
+ADVANCED DEFENSE:
+25 Ball Intercept Range: Distance for intercepting ball
+26 Min Intercept Time: Minimum time needed to intercept
+27 Advance Distance: How far to advance from goal
+28 Rotation Smoothness: Smoothness of turning
+29 Dive Look Ahead: How far ahead to look during dive
+
+VISUALS:
+30 Toggle various visual indicators on/off
+]]
         })
     end
     
-    notify("GK Helper", "Module loaded (v46 with fixed dive)", true)
+    -- Create Sync section in Config tab
+    if UI.Tabs.Config then
+        moduleState.syncSection = UI.Tabs.Config:Section({Name = 'AutoGoalKeeper Sync', Side = 'Right'})
+        
+        moduleState.syncSection:Header({ Name = "AutoGoalKeeper config sync" })
+        moduleState.syncSection:Divider()
+        
+        moduleState.syncSection:Button({
+            Name = "Sync Current Config",
+            Callback = function()
+                syncConfig()
+            end
+        })
+    end
+    
 end
 
 function GKHelperModule:Destroy()
