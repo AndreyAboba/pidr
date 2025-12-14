@@ -1,6 +1,6 @@
 -- GK Helper v47 — Advanced Defense Module
 -- Improved version with smart attack prediction and fixed dive bug
-print('2')
+
 local player = game.Players.LocalPlayer
 local ws = workspace
 local rs = game:GetService("RunService")
@@ -106,7 +106,10 @@ local moduleState = {
     heartbeatConnection = nil,
     uiElements = {},
     attackTargetHistory = {},
-    predictedEnemyPositions = {}
+    predictedEnemyPositions = {},
+    currentAttackTarget = nil,
+    lastAttackTargetUpdate = 0,
+    attackTargetVisible = false
 }
 
 -- Global variables
@@ -185,12 +188,13 @@ local function createVisuals()
     end
     
     if CONFIG.SHOW_ATTACK_TARGET then
+        -- Create smoother circle with more segments
         moduleState.visualObjects.attackTarget = {}
-        for i = 1, 24 do
+        for i = 1, 36 do -- Increased from 24 to 36 for smoother circle
             local line = Drawing.new("Line")
             line.Thickness = 3 
             line.Color = Color3.fromRGB(255, 105, 180) -- Pink color for attack target
-            line.Transparency = 0.6
+            line.Transparency = 0.7
             line.Visible = false
             moduleState.visualObjects.attackTarget[i] = line
         end
@@ -211,6 +215,8 @@ local function clearAllVisuals()
         end
     end
     moduleState.visualObjects = {}
+    moduleState.attackTargetVisible = false
+    moduleState.currentAttackTarget = nil
 end
 
 local function hideAllVisuals()
@@ -223,6 +229,7 @@ local function hideAllVisuals()
             end
         end
     end
+    moduleState.attackTargetVisible = false
 end
 
 -- Check if goalkeeper
@@ -396,12 +403,13 @@ local function drawEndpoint(pos)
         
         if l then
             l.From = Vector2.new(s1.X, s1.Y) 
-            l.To = Vector2.new(s2.X, s2.Y) 
+            l.To = Vector2.new(s2.X, s2.Y)
             l.Visible = s1.Z > 0 and s2.Z > 0
         end
     end
 end
 
+-- IMPROVED: Smooth attack target rendering at foot level
 local function drawAttackTarget(pos)
     if not pos or not moduleState.visualObjects.attackTarget then 
         if moduleState.visualObjects.attackTarget then
@@ -409,27 +417,45 @@ local function drawAttackTarget(pos)
                 if l then l.Visible = false end 
             end 
         end
+        moduleState.attackTargetVisible = false
         return 
     end
     
     local cam = ws.CurrentCamera 
     if not cam then return end
     
-    local step = math.pi * 2 / 24
-    for i = 1, 24 do
+    -- Position at foot level (ground level + small offset)
+    local footPos = Vector3.new(pos.X, 0.5, pos.Z)
+    
+    local step = math.pi * 2 / 36
+    local radius = 2.0 -- Slightly smaller radius
+    
+    -- Smooth rendering - update every frame
+    for i = 1, 36 do
         local a1, a2 = (i-1)*step, i*step
-        local radius = 2.5 -- Smaller radius for attack target
-        local p1 = pos + Vector3.new(math.cos(a1)*radius, 1, math.sin(a1)*radius)
-        local p2 = pos + Vector3.new(math.cos(a2)*radius, 1, math.sin(a2)*radius)
+        local p1 = footPos + Vector3.new(math.cos(a1)*radius, 0.1, math.sin(a1)*radius)
+        local p2 = footPos + Vector3.new(math.cos(a2)*radius, 0.1, math.sin(a2)*radius)
         local s1, s2 = cam:WorldToViewportPoint(p1), cam:WorldToViewportPoint(p2)
         local l = moduleState.visualObjects.attackTarget[i]
         
         if l then
             l.From = Vector2.new(s1.X, s1.Y) 
-            l.To = Vector2.new(s2.X, s2.Y) 
+            l.To = Vector2.new(s2.X, s2.Y)
             l.Visible = s1.Z > 0 and s2.Z > 0
         end
     end
+    
+    moduleState.attackTargetVisible = true
+end
+
+-- Function to hide attack target
+local function hideAttackTarget()
+    if moduleState.visualObjects.attackTarget then
+        for _, l in moduleState.visualObjects.attackTarget do 
+            if l then l.Visible = false end 
+        end
+    end
+    moduleState.attackTargetVisible = false
 end
 
 local function predictTrajectory(ball)
@@ -750,11 +776,19 @@ local function smartBlockEnemyView(root, targetPlayer, ball)
     end
     
     if not targetPlayer or not targetPlayer.Character then
+        hideAttackTarget()
         return false
     end
     
     local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not targetRoot then return false end
+    if not targetRoot then 
+        hideAttackTarget()
+        return false 
+    end
+    
+    -- Update attack target
+    moduleState.currentAttackTarget = targetPlayer
+    moduleState.lastAttackTargetUpdate = tick()
     
     -- Predict enemy position with server lag compensation
     local predictedEnemyPos = predictEnemyPosition(targetRoot)
@@ -808,7 +842,7 @@ local function smartBlockEnemyView(root, targetPlayer, ball)
     -- Adjust height
     blockPos = Vector3.new(blockPos.X, root.Position.Y, blockPos.Z)
     
-    -- Draw predicted attack target
+    -- Draw predicted attack target at foot level
     if CONFIG.SHOW_ATTACK_TARGET and moduleState.enabled then
         drawAttackTarget(predictedBlockPos)
     end
@@ -946,6 +980,8 @@ local function cleanup()
     moduleState.smoothCFrame = nil
     moduleState.attackTargetHistory = {}
     moduleState.predictedEnemyPositions = {}
+    moduleState.currentAttackTarget = nil
+    moduleState.attackTargetVisible = false
 end
 
 -- Main heartbeat cycle
@@ -978,17 +1014,20 @@ local function startHeartbeat()
         
         if not ball then 
             clearTrajAndEndpoint()
+            hideAttackTarget()
             if GoalCFrame then 
                 moveToTarget(root, GoalCFrame.Position + GoalForward * CONFIG.STAND_DIST) 
             end
             moduleState.isDiving = false
             moduleState.currentTargetType = nil
             moduleState.cachedPoints = nil
+            moduleState.currentAttackTarget = nil
             return 
         end
         
         if not updateGoals() then 
             clearTrajAndEndpoint()
+            hideAttackTarget()
             return 
         end
 
@@ -1022,8 +1061,14 @@ local function startHeartbeat()
                 if targetRoot and isInDefenseZone(targetRoot.Position) then
                     -- Smart block enemy FOV with prediction
                     smartBlockActive = smartBlockEnemyView(root, attackTargetPlayer, ball)
+                else
+                    hideAttackTarget()
                 end
+            else
+                hideAttackTarget()
             end
+        else
+            hideAttackTarget()
         end
 
         if owner and owner ~= player and owner.Character then
@@ -1044,7 +1089,7 @@ local function startHeartbeat()
                     viewBlockPos = Vector3.new(viewBlockPos.X, root.Position.Y, viewBlockPos.Z)
                     moveToTarget(root, viewBlockPos)
                     
-                    -- Draw predicted position
+                    -- Draw predicted position at foot level
                     if CONFIG.SHOW_ATTACK_TARGET then
                         drawAttackTarget(predictedEnemyPos)
                     end
@@ -1058,6 +1103,19 @@ local function startHeartbeat()
             local targetPos = predictedPos + GoalForward * CONFIG.ATTACK_DISTANCE
             moveToTarget(root, targetPos)
             smartBlockActive = true
+            
+            -- Draw predicted position
+            if CONFIG.SHOW_ATTACK_TARGET then
+                drawAttackTarget(predictedPos)
+            end
+        end
+
+        -- If no attack target for 0.5 seconds, hide attack target visuals
+        if not attackTargetPlayer and not isAggro and not CONFIG.AGGRESSIVE_MODE then
+            if moduleState.currentAttackTarget and tick() - moduleState.lastAttackTargetUpdate > 0.5 then
+                hideAttackTarget()
+                moduleState.currentAttackTarget = nil
+            end
         end
 
         local points, endpoint = nil, nil
@@ -1094,7 +1152,7 @@ local function startHeartbeat()
             clearTrajAndEndpoint()
         end
 
-        -- Draw trajectory
+        -- Draw trajectory (always render every frame)
         if CONFIG.SHOW_TRAJECTORY and points and moduleState.visualObjects.trajLines then
             local cam = ws.CurrentCamera
             for i = 1, math.min(CONFIG.PRED_STEPS, #points - 1) do
@@ -1114,6 +1172,7 @@ local function startHeartbeat()
             clearTrajAndEndpoint() 
         end
 
+        -- Draw ball box (always render every frame)
         if CONFIG.SHOW_BALL_BOX and distBall < 70 and moduleState.visualObjects.BallBox then 
             local col = endpoint and (isThreat and Color3.fromRGB(255,0,0) or (endpoint.Y > CONFIG.JUMP_THRES and Color3.fromRGB(255,255,0)) or Color3.fromRGB(0,200,255)) or Color3.fromRGB(0,255,0)
             drawCube(moduleState.visualObjects.BallBox, CFrame.new(ball.Position), Vector3.new(3.5, 3.5, 3.5), col)
@@ -1404,16 +1463,16 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
         moduleState.uiElements.DiveSpeed = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Dive Speed",
             Minimum = 20,
-            Maximum = 60,
+            Maximum = 30,
             Default = CONFIG.DIVE_SPEED,
             Precision = 1,
             Callback = function(v) CONFIG.DIVE_SPEED = v end
         }, 'DiveSpeedGK')
         
         moduleState.uiElements.DiveVelThresh = UI.Sections.AutoGoalKeeper:Slider({
-            Name = "Dive Velocity Threshold",
+            Name = "Dive Velocity",
             Minimum = 10,
-            Maximum = 40,
+            Maximum = 20,
             Default = CONFIG.DIVE_VEL_THRES,
             Precision = 1,
             Callback = function(v) CONFIG.DIVE_VEL_THRES = v end
@@ -1432,7 +1491,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
         
         -- Jump Settings
         moduleState.uiElements.JumpVelThresh = UI.Sections.AutoGoalKeeper:Slider({
-            Name = "Jump Velocity Threshold",
+            Name = "Jump Velocity",
             Minimum = 20,
             Maximum = 50,
             Default = CONFIG.JUMP_VEL_THRES,
@@ -1491,7 +1550,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
         }, 'AGGROTHRESGK')
         
         moduleState.uiElements.MaxChaseDist = UI.Sections.AutoGoalKeeper:Slider({
-            Name = "Max Chase Distance",
+            Name = "Max Chase Dist",
             Minimum = 20,
             Maximum = 80,
             Default = CONFIG.MAX_CHASE_DIST,
@@ -1509,7 +1568,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
         }, 'GOALCOVERAGEGK')
         
         moduleState.uiElements.LateralMaxMult = UI.Sections.AutoGoalKeeper:Slider({
-            Name = "Lateral Movement Multiplier",
+            Name = "Lateral Movement",
             Minimum = 0.2,
             Maximum = 0.8,
             Default = CONFIG.LATERAL_MAX_MULT,
@@ -1550,6 +1609,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
             Maximum = 0.3,
             Default = CONFIG.ATTACK_PREDICT_TIME,
             Precision = 2,
+            Tooltip = "Time to predict enemy position (compensates for server lag)",
             Callback = function(v) CONFIG.ATTACK_PREDICT_TIME = v end
         }, 'ATTACKPREDICTGK')
         
@@ -1754,19 +1814,29 @@ IMPROVEMENTS IN V1.4:
 1. SMART ATTACK: Now predicts enemy movement and positions slightly ahead
 2. FIXED DIVE BUG: No more flying into space after diving
 3. SERVER LAG COMPENSATION: Attacks where enemy WILL be, not where they are
-4. IMPROVED VISUALS: Show predicted attack targets
+4. IMPROVED VISUALS: Show predicted attack targets at foot level
+5. SMOOTH RENDERING: Attack target circle renders every frame
+6. PROPER CLEANUP: Attack target disappears when no enemy
 
 SMART ATTACK FEATURES:
 - Predicts enemy position based on velocity
 - Compensates for server lag (0.15s by default)
 - Positions goalkeeper ahead of enemy's path to goal
 - Better blocking of shooting angles
+- Smooth visual feedback at foot level
 
 DIVE FIXES:
 - Reduced vertical force to prevent flying
 - Added downward force after dive
 - Shorter dive duration
 - More stable rotation
+
+VISUAL IMPROVEMENTS:
+- Attack target at foot level (y=0.5)
+- 36 segments for smooth circle
+- Renders every frame (60+ FPS)
+- Properly disappears when no target
+- Pink color for easy identification
 
 BASIC SETTINGS:
 0 Movement Speed: How fast the goalkeeper moves
@@ -1844,5 +1914,3 @@ function GKHelperModule:Destroy()
 end
 
 return GKHelperModule
-
-
