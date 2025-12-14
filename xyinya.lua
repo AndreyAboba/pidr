@@ -9,7 +9,8 @@ function Visuals.Init(UI, Core, notify)
             StartPos = nil, 
             TouchStartTime = 0, 
             TouchThreshold = 0.2,
-            CurrentDesign = "Default"
+            CurrentDesign = "Default",
+            OriginalIcon = nil
         },
         Watermark = { 
             Enabled = true, 
@@ -123,29 +124,42 @@ function Visuals.Init(UI, Core, notify)
     Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0.5, 0)
 
     local buttonIcon = Instance.new("ImageLabel")
+    buttonIcon.Name = "MainIcon"
     buttonIcon.Size = UDim2.new(0, 30, 0, 30)
     buttonIcon.Position = UDim2.new(0.5, -15, 0.5, -15)
     buttonIcon.BackgroundTransparency = 1
     buttonIcon.Image = "rbxassetid://73279554401260"
     buttonIcon.Parent = buttonFrame
 
+    -- Сохраняем оригинальную иконку
+    State.MenuButton.OriginalIcon = buttonIcon
+
     -- Функции для разных дизайнов кнопки
     local function applyDefaultDesign()
-        -- Очищаем старые эффекты
+        -- Сохраняем текущую позицию
+        local currentPos = buttonFrame.Position
+        
+        -- Очищаем старые эффекты Liquid Glass
         for _, child in ipairs(buttonFrame:GetChildren()) do
-            if child.Name ~= "UICorner" and child ~= buttonIcon then
+            if child.Name == "AcrylicBlur" or child.Name == "IconContainer" or 
+               child.Name == "EdgeGlow" or child.Name == "GlassNoise" then
                 child:Destroy()
             end
+        end
+        
+        -- Восстанавливаем оригинальную иконку
+        if State.MenuButton.OriginalIcon and State.MenuButton.OriginalIcon.Parent ~= buttonFrame then
+            State.MenuButton.OriginalIcon.Parent = buttonFrame
         end
         
         -- Сбрасываем настройки
         buttonFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
         buttonFrame.BackgroundTransparency = 0.3
         buttonFrame.Size = UDim2.new(0, 50, 0, 50)
-        buttonFrame.Position = State.MenuButton.StartPos or UDim2.new(0, 100, 0, 100)
+        buttonFrame.Position = currentPos -- Сохраняем позицию
         
         -- Восстанавливаем иконку
-        buttonIcon.Image = "rbxassetid://73279554401260"
+        buttonIcon = State.MenuButton.OriginalIcon
         buttonIcon.Size = UDim2.new(0, 30, 0, 30)
         buttonIcon.Position = UDim2.new(0.5, -15, 0.5, -15)
         buttonIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
@@ -160,142 +174,143 @@ function Visuals.Init(UI, Core, notify)
     end
 
     local function applyLiquidGlassDesign()
+        -- Сохраняем текущую позицию
+        local currentPos = buttonFrame.Position
+        
         -- Очищаем старые эффекты
         for _, child in ipairs(buttonFrame:GetChildren()) do
-            if child.Name ~= "UICorner" and child ~= buttonIcon then
+            if child.Name == "AcrylicBlur" or child.Name == "IconContainer" or 
+               child.Name == "EdgeGlow" or child.Name == "GlassNoise" then
                 child:Destroy()
             end
         end
         
-        -- Устанавливаем позицию вверху экрана по центру
-        buttonFrame.Position = UDim2.new(0.5, -40, 0, 20)
-        buttonFrame.Size = UDim2.new(0, 80, 0, 36)
+        -- Сохраняем оригинальную иконку
+        if State.MenuButton.OriginalIcon and State.MenuButton.OriginalIcon.Parent == buttonFrame then
+            State.MenuButton.OriginalIcon:Destroy()
+        end
+        
+        -- Устанавливаем размер и позицию
+        buttonFrame.Size = UDim2.new(0, 70, 0, 32)
+        buttonFrame.Position = currentPos -- Сохраняем текущую позицию
         buttonFrame.BackgroundColor3 = Color3.fromRGB(40, 60, 100)
-        buttonFrame.BackgroundTransparency = 0.05
+        buttonFrame.BackgroundTransparency = 0.6 -- Более прозрачный фон
         
         -- Создаем эффект размытия (имитация Acrylic Blur)
         local blurFrame = Instance.new("Frame")
         blurFrame.Name = "AcrylicBlur"
         blurFrame.Size = UDim2.new(1, 0, 1, 0)
-        blurFrame.BackgroundColor3 = Color3.fromRGB(50, 70, 120)
-        blurFrame.BackgroundTransparency = 0.85
+        blurFrame.BackgroundColor3 = Color3.fromRGB(60, 80, 140)
+        blurFrame.BackgroundTransparency = 0.4
         blurFrame.BorderSizePixel = 0
         blurFrame.Parent = buttonFrame
-        
-        -- Добавляем шум для эффекта стекла
-        local noise = Instance.new("ImageLabel")
-        noise.Name = "GlassNoise"
-        noise.Size = UDim2.new(1, 0, 1, 0)
-        noise.BackgroundTransparency = 1
-        noise.Image = "rbxassetid://8569322835" -- Шумовая текстура
-        noise.ImageTransparency = 0.85
-        noise.ImageColor3 = Color3.fromRGB(200, 220, 255)
-        noise.ScaleType = Enum.ScaleType.Tile
-        noise.TileSize = UDim2.new(0, 20, 0, 20)
-        noise.Parent = blurFrame
-        
-        -- Эффект градиентного свечения по краям
-        local edgeGlow = Instance.new("Frame")
-        edgeGlow.Name = "EdgeGlow"
-        edgeGlow.Size = UDim2.new(1, 0, 1, 0)
-        edgeGlow.BackgroundTransparency = 1
-        edgeGlow.Parent = buttonFrame
-        
-        local glowGradient = Instance.new("UIGradient")
-        glowGradient.Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(80, 120, 200)),
-            ColorSequenceKeypoint.new(0.1, Color3.fromRGB(60, 100, 180)),
-            ColorSequenceKeypoint.new(0.9, Color3.fromRGB(60, 100, 180)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 120, 200))
-        }
-        glowGradient.Transparency = NumberSequence.new{
-            NumberSequenceKeypoint.new(0, 0.8),
-            NumberSequenceKeypoint.new(0.1, 0.9),
-            NumberSequenceKeypoint.new(0.9, 0.9),
-            NumberSequenceKeypoint.new(1, 0.8)
-        }
-        glowGradient.Rotation = 0
-        glowGradient.Parent = edgeGlow
         
         -- Скругленные углы
         local corner = buttonFrame:FindFirstChild("UICorner")
         if corner then
-            corner.CornerRadius = UDim.new(0, 18)
+            corner.CornerRadius = UDim.new(0, 16)
         else
-            Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0, 18)
+            Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0, 16)
         end
         
-        -- Отдельный фрейм для иконки (более прозрачный)
+        -- Отдельный фрейм для иконки (меньше и менее прозрачный)
         local iconContainer = Instance.new("Frame")
         iconContainer.Name = "IconContainer"
-        iconContainer.Size = UDim2.new(0, 48, 0, 48)
-        iconContainer.Position = UDim2.new(0.5, -24, 0.5, -24)
-        iconContainer.BackgroundColor3 = Color3.fromRGB(70, 100, 160)
-        iconContainer.BackgroundTransparency = 0.7
+        iconContainer.Size = UDim2.new(0, 44, 0, 44) -- Меньше основного фрейма
+        iconContainer.Position = UDim2.new(0.5, -22, 0.5, -22) -- Центрируем
+        iconContainer.BackgroundColor3 = Color3.fromRGB(80, 110, 170)
+        iconContainer.BackgroundTransparency = 0.3 -- Менее прозрачный чем фон
         iconContainer.BorderSizePixel = 0
         iconContainer.Parent = buttonFrame
         
         local iconCorner = Instance.new("UICorner")
-        iconCorner.CornerRadius = UDim.new(0, 12)
+        iconCorner.CornerRadius = UDim.new(0, 10)
         iconCorner.Parent = iconContainer
         
-        -- Обновляем иконку
-        buttonIcon.Image = "rbxassetid://73279554401260"
-        buttonIcon.Size = UDim2.new(0, 28, 0, 28)
-        buttonIcon.Position = UDim2.new(0.5, -14, 0.5, -14)
-        buttonIcon.ImageColor3 = Color3.fromRGB(220, 240, 255)
-        buttonIcon.Parent = iconContainer
+        -- Создаем новую иконку внутри контейнера
+        local newIcon = Instance.new("ImageLabel")
+        newIcon.Name = "LiquidGlassIcon"
+        newIcon.Size = UDim2.new(0, 28, 0, 28)
+        newIcon.Position = UDim2.new(0.5, -14, 0.5, -14)
+        newIcon.BackgroundTransparency = 1
+        newIcon.Image = "rbxassetid://73279554401260"
+        newIcon.ImageColor3 = Color3.fromRGB(240, 245, 255)
+        newIcon.Parent = iconContainer
         
-        -- Анимация шума
-        task.spawn(function()
-            while State.MenuButton.CurrentDesign == "Liquid Glass" do
-                for i = 0, 360, 2 do
-                    if State.MenuButton.CurrentDesign ~= "Liquid Glass" then break end
-                    noise.Rotation = i
-                    task.wait(0.1)
-                end
-            end
-        end)
+        -- Сохраняем новую иконку
+        buttonIcon = newIcon
         
-        -- Эффект при нажатии
+        -- Локальная переменная для анимации
+        local isAnimating = false
+        
+        -- Эффект при нажатии (правильная анимация)
         local function onPress()
-            if State.MenuButton.CurrentDesign ~= "Liquid Glass" then return end
+            if State.MenuButton.CurrentDesign ~= "Liquid Glass" or isAnimating then return end
             
-            -- Анимация нажатия
+            isAnimating = true
+            
+            -- Анимация нажатия (уменьшение размера и прозрачности)
             local originalSize = iconContainer.Size
-            local originalTransparency = iconContainer.BackgroundTransparency
+            local originalPos = iconContainer.Position
             
-            -- Уменьшаем контейнер иконки
-            for i = 0, 1, 0.2 do
+            -- Эффект "вдавливания"
+            for i = 0, 1, 0.1 do
                 if State.MenuButton.CurrentDesign ~= "Liquid Glass" then break end
-                iconContainer.Size = originalSize:Lerp(UDim2.new(0, 44, 0, 44), i)
-                iconContainer.BackgroundTransparency = originalTransparency + (0.15 * i)
+                local scale = 1 - (i * 0.1) -- Уменьшение на 10%
+                iconContainer.Size = UDim2.new(0, originalSize.X.Offset * scale, 0, originalSize.Y.Offset * scale)
+                iconContainer.Position = UDim2.new(
+                    0.5, -originalSize.X.Offset * scale / 2,
+                    0.5, -originalSize.Y.Offset * scale / 2
+                )
+                iconContainer.BackgroundTransparency = 0.3 + (i * 0.2) -- Увеличение прозрачности
                 task.wait(0.01)
             end
             
             task.wait(0.05)
             
             -- Возвращаем к исходному состоянию
-            for i = 0, 1, 0.1 do
+            for i = 0, 1, 0.05 do
                 if State.MenuButton.CurrentDesign ~= "Liquid Glass" then break end
-                iconContainer.Size = UDim2.new(0, 48, 0, 48):Lerp(originalSize, i)
-                iconContainer.BackgroundTransparency = (originalTransparency + 0.15) - (0.15 * i)
+                local scale = 0.9 + (i * 0.1) -- Возврат к 100%
+                iconContainer.Size = UDim2.new(0, originalSize.X.Offset * scale, 0, originalSize.Y.Offset * scale)
+                iconContainer.Position = UDim2.new(
+                    0.5, -originalSize.X.Offset * scale / 2,
+                    0.5, -originalSize.Y.Offset * scale / 2
+                )
+                iconContainer.BackgroundTransparency = 0.5 - (i * 0.2) -- Возврат прозрачности
                 task.wait(0.01)
             end
+            
+            -- Финишная коррекция
+            iconContainer.Size = originalSize
+            iconContainer.Position = originalPos
+            iconContainer.BackgroundTransparency = 0.3
+            
+            isAnimating = false
         end
         
         -- Обработчик нажатия для Liquid Glass
-        buttonFrame.InputBegan:Connect(function(input)
+        local connection
+        connection = buttonFrame.InputBegan:Connect(function(input)
             if State.MenuButton.CurrentDesign == "Liquid Glass" and 
                (input.UserInputType == Enum.UserInputType.MouseButton1 or 
                 input.UserInputType == Enum.UserInputType.Touch) then
                 onPress()
             end
         end)
+        
+        -- Сохраняем соединение для очистки
+        State.MenuButton.LiquidGlassConnection = connection
     end
 
     -- Применяем текущий дизайн
     local function applyDesign(designName)
+        -- Очищаем старое соединение если было
+        if State.MenuButton.LiquidGlassConnection then
+            State.MenuButton.LiquidGlassConnection:Disconnect()
+            State.MenuButton.LiquidGlassConnection = nil
+        end
+        
         State.MenuButton.CurrentDesign = designName
         
         if designName == "Default" then
