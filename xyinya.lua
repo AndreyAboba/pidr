@@ -154,7 +154,7 @@ function Visuals.Init(UI, Core, notify)
         -- Сохраняем текущую позицию
         local currentPos = buttonFrame.Position
         
-        -- Очищаем старые эффекты Liquid Glass
+        -- Очищаем старые эффекты Default v2
         for _, child in ipairs(buttonFrame:GetChildren()) do
             if child.Name ~= "UICorner" and child.Name ~= "MainIcon" then
                 child:Destroy()
@@ -182,7 +182,7 @@ function Visuals.Init(UI, Core, notify)
         end
     end
 
-    local function applyLiquidGlassDesign()
+    local function applyDefaultV2Design()
         -- Сохраняем текущую позицию
         local currentPos = buttonFrame.Position
         
@@ -213,11 +213,11 @@ function Visuals.Init(UI, Core, notify)
         -- Отдельный фрейм для иконки (размер 34x34, центрирован)
         local iconContainer = Instance.new("Frame")
         iconContainer.Name = "IconContainer"
-        iconContainer.Size = UDim2.new(0, 34, 0, 34) -- Новый размер 34x34
+        iconContainer.Size = UDim2.new(0, 34, 0, 34) -- Размер 34x34
         -- Центрирование: 17 = 34/2
         iconContainer.Position = UDim2.new(0.5, -17, 0.5, -17) -- Идеально по центру
-        iconContainer.BackgroundColor3 = Color3.fromRGB(25, 40, 55) -- Темнее чем фон
-        iconContainer.BackgroundTransparency = 0.55 -- Менее прозрачный (0.2 вместо 0.4)
+        iconContainer.BackgroundColor3 = Color3.fromRGB(25, 40, 70) -- Темнее чем фон
+        iconContainer.BackgroundTransparency = 0.2 -- Менее прозрачный (0.2 вместо 0.4)
         iconContainer.BorderSizePixel = 0
         iconContainer.Parent = buttonFrame
         
@@ -227,7 +227,7 @@ function Visuals.Init(UI, Core, notify)
         
         -- Создаем новую иконку внутри контейнера
         local newIcon = Instance.new("ImageLabel")
-        newIcon.Name = "LiquidGlassIcon"
+        newIcon.Name = "DefaultV2Icon"
         newIcon.Size = UDim2.new(0, 24, 0, 24) -- Чуть меньше для 34x34 контейнера
         newIcon.Position = UDim2.new(0.5, -12, 0.5, -12) -- Центрируем в контейнере
         newIcon.BackgroundTransparency = 1
@@ -237,11 +237,22 @@ function Visuals.Init(UI, Core, notify)
         
         -- Локальная переменная для анимации
         local isAnimating = false
+        local lastClickTime = 0
+        local clickCooldown = 0.3 -- Задержка между кликами для предотвращения спама
         
-        -- Эффект при нажатии (правильная анимация)
+        -- Эффект при нажатии (правильная анимация) - только при коротком нажатии (не перетаскивании)
         local function onPress()
-            if State.MenuButton.CurrentDesign ~= "Liquid Glass" or isAnimating then return end
+            -- Проверяем что мы не в процессе перетаскивания и не слишком часто нажимаем
+            if State.MenuButton.CurrentDesign ~= "Default v2" or isAnimating or State.MenuButton.Dragging then 
+                return 
+            end
             
+            local currentTime = tick()
+            if currentTime - lastClickTime < clickCooldown then
+                return -- Слишком частые нажатия игнорируем
+            end
+            
+            lastClickTime = currentTime
             isAnimating = true
             
             -- Анимация нажатия (уменьшение размера и увеличение прозрачности)
@@ -250,7 +261,7 @@ function Visuals.Init(UI, Core, notify)
             
             -- Эффект "вдавливания" - равномерное уменьшение
             for i = 0, 1, 0.1 do
-                if State.MenuButton.CurrentDesign ~= "Liquid Glass" then break end
+                if State.MenuButton.CurrentDesign ~= "Default v2" or State.MenuButton.Dragging then break end
                 local scale = 1 - (i * 0.15) -- Уменьшение на 15%
                 iconContainer.Size = UDim2.new(0, originalSize.X.Offset * scale, 0, originalSize.Y.Offset * scale)
                 iconContainer.Position = UDim2.new(
@@ -265,7 +276,7 @@ function Visuals.Init(UI, Core, notify)
             
             -- Возвращаем к исходному состоянию
             for i = 0, 1, 0.05 do
-                if State.MenuButton.CurrentDesign ~= "Liquid Glass" then break end
+                if State.MenuButton.CurrentDesign ~= "Default v2" or State.MenuButton.Dragging then break end
                 local scale = 0.85 + (i * 0.15) -- Возврат к 100%
                 iconContainer.Size = UDim2.new(0, originalSize.X.Offset * scale, 0, originalSize.Y.Offset * scale)
                 iconContainer.Position = UDim2.new(
@@ -284,10 +295,10 @@ function Visuals.Init(UI, Core, notify)
             isAnimating = false
         end
         
-        -- Обработчик нажатия для Liquid Glass
+        -- Обработчик нажатия для Default v2
         local connection
         connection = buttonFrame.InputBegan:Connect(function(input)
-            if State.MenuButton.CurrentDesign == "Liquid Glass" and 
+            if State.MenuButton.CurrentDesign == "Default v2" and 
                (input.UserInputType == Enum.UserInputType.MouseButton1 or 
                 input.UserInputType == Enum.UserInputType.Touch) then
                 onPress()
@@ -295,23 +306,23 @@ function Visuals.Init(UI, Core, notify)
         end)
         
         -- Сохраняем соединение для очистки
-        State.MenuButton.LiquidGlassConnection = connection
+        State.MenuButton.DefaultV2Connection = connection
     end
 
     -- Применяем текущий дизайн
     local function applyDesign(designName)
         -- Очищаем старое соединение если было
-        if State.MenuButton.LiquidGlassConnection then
-            State.MenuButton.LiquidGlassConnection:Disconnect()
-            State.MenuButton.LiquidGlassConnection = nil
+        if State.MenuButton.DefaultV2Connection then
+            State.MenuButton.DefaultV2Connection:Disconnect()
+            State.MenuButton.DefaultV2Connection = nil
         end
         
         State.MenuButton.CurrentDesign = designName
         
         if designName == "Default" then
             applyDefaultDesign()
-        elseif designName == "Liquid Glass" then
-            applyLiquidGlassDesign()
+        elseif designName == "Default v2" then
+            applyDefaultV2Design()
         end
     end
 
@@ -1022,7 +1033,7 @@ function Visuals.Init(UI, Core, notify)
                 end
             }, 'MobileMode')
             
-            -- Добавляем Dropdown для выбора дизайна
+            -- Добавляем Dropdown для выбора дизайна (переименовано Liquid Glass в Default v2)
             UI.Sections.MenuButton:Dropdown({
                 Name = "Design",
                 Options = {"Default", "Default v2"},
