@@ -40,9 +40,9 @@ function Visuals.Init(UI, Core, notify)
             Enabled = { Value = false, Default = false },
             ESPMode = { Value = "2D", Default = "2D" },
             EnemyColor = { Value = Color3.fromRGB(255, 0, 0), Default = Color3.fromRGB(255, 0, 0) },
-            FriendColor = { Value = Color3.fromRGB(0, 255, 0), Default = Color3.fromRGB(0, 255, 0) },
+            TeamColor = { Value = Color3.fromRGB(0, 255, 0), Default = Color3.fromRGB(0, 255, 0) }, -- Переименовано
             TeamCheck = { Value = true, Default = true },
-            UseTeamColor = { Value = false, Default = false }, -- Новый параметр
+            UseTeamColor = { Value = false, Default = false },
             BoxSettings = {
                 Thickness = { Value = 1, Default = 1 },
                 Transparency = { Value = 0.2, Default = 0.2 },
@@ -663,15 +663,23 @@ function Visuals.Init(UI, Core, notify)
         test:Remove()
     end)
 
-    -- Функция для определения цвета команды
-    local function getTeamColor(player)
-        local character = player.Character
-        if not character then return nil end
+    -- Функция для проверки команды
+    local function getPlayerTeam(player)
+        if player and player.Team then
+            return player.Team
+        end
+        return nil
+    end
+
+    -- Функция для проверки совпадения команд
+    local function isSameTeam(player1, player2)
+        local team1 = getPlayerTeam(player1)
+        local team2 = getPlayerTeam(player2)
         
-        local humanoid = character:FindFirstChild("Humanoid")
-        if not humanoid then return nil end
-        
-        return humanoid.Team and humanoid.Team.TeamColor.Color or nil
+        if team1 and team2 then
+            return team1 == team2
+        end
+        return false
     end
 
     -- Функция для получения размеров персонажа
@@ -682,15 +690,15 @@ function Visuals.Init(UI, Core, notify)
             if ESP.Settings.ESPMode.Value == "2D" then
                 return Vector3.new(2, humanoid.HipHeight * 2.5 + 3, 1) -- Увеличена высота
             else
-                -- Для 3D: увеличенная ширина, симметричная пропорция X/Z, высота увеличена
-                return Vector3.new(3.5, humanoid.HipHeight * 2 + 3, 3.5) -- Увеличена ширина, симметрично X/Z, высота увеличена
+                -- Для 3D: немного уменьшены размеры, но симметричная пропорция X/Z
+                return Vector3.new(2.8, humanoid.HipHeight * 1.8 + 2.5, 2.8) -- Немного меньше высота и ширина
             end
         end
         -- Размеры по умолчанию
         if ESP.Settings.ESPMode.Value == "2D" then
             return Vector3.new(3, 8, 1) -- Выше для 2D
         else
-            return Vector3.new(4, 7, 4) -- Шире и симметрично для 3D
+            return Vector3.new(3, 6, 3) -- Немного меньше для 3D
         end
     end
 
@@ -703,7 +711,7 @@ function Visuals.Init(UI, Core, notify)
         local cf = rootPart.CFrame
         local points = {}
         
-        -- 8 углов куба (шире и симметричнее)
+        -- 8 углов куба
         local corners = {
             Vector3.new(-size.X/2, -size.Y/2, -size.Z/2), -- Нижний задний левый
             Vector3.new(size.X/2, -size.Y/2, -size.Z/2),  -- Нижний задний правый
@@ -742,9 +750,7 @@ function Visuals.Init(UI, Core, notify)
             NameGui = nil,
             LastPosition = nil,
             LastVisible = false,
-            LastIsFriend = nil,
-            LastFriendsList = nil,
-            LastTeamColor = nil
+            LastIsSameTeam = nil
         }
 
         for _, line in pairs(esp.BoxLines) do
@@ -830,6 +836,7 @@ function Visuals.Init(UI, Core, notify)
         if not camera then return end
 
         local localPlayer = Core.PlayerData.LocalPlayer
+        local localTeam = getPlayerTeam(localPlayer)
 
         for _, player in pairs(Core.Services.Players:GetPlayers()) do
             if player == localPlayer then continue end
@@ -874,28 +881,32 @@ function Visuals.Init(UI, Core, notify)
             esp.LastVisible = true
             esp.LastPosition = rootPos
 
-            -- Получаем цвет команды если нужно
-            local teamColor
-            if ESP.Settings.UseTeamColor.Value then
-                teamColor = getTeamColor(player)
-            end
+            -- Определяем цвет в зависимости от команды
+            local playerTeam = getPlayerTeam(player)
+            local isSameTeam = false
             
-            local isFriend = esp.LastIsFriend
-            if esp.LastFriendsList ~= Core.Services.FriendsList or esp.LastIsFriend == nil then
-                isFriend = Core.Services.FriendsList and Core.Services.FriendsList[player.Name:lower()] or false
-                esp.LastIsFriend = isFriend
-                esp.LastFriendsList = Core.Services.FriendsList
+            if ESP.Settings.TeamCheck.Value and localTeam and playerTeam then
+                isSameTeam = (localTeam == playerTeam)
+                esp.LastIsSameTeam = isSameTeam
+            else
+                isSameTeam = esp.LastIsSameTeam or false
             end
 
             -- Определяем базовый цвет
             local baseColor
-            if ESP.Settings.UseTeamColor.Value and teamColor then
-                baseColor = teamColor
+            if ESP.Settings.UseTeamColor.Value and playerTeam then
+                -- Используем цвет команды игрока
+                baseColor = playerTeam.TeamColor.Color
             else
-                baseColor = (isFriend and ESP.Settings.TeamCheck.Value) and ESP.Settings.FriendColor.Value or ESP.Settings.EnemyColor.Value
+                -- Используем стандартные цвета
+                if isSameTeam then
+                    baseColor = ESP.Settings.TeamColor.Value
+                else
+                    baseColor = ESP.Settings.EnemyColor.Value
+                end
             end
             
-            local gradColor1, gradColor2 = Core.GradientColors.Color1.Value, (isFriend and ESP.Settings.TeamCheck.Value) and Color3.fromRGB(0, 255, 0) or Core.GradientColors.Color2.Value
+            local gradColor1, gradColor2 = Core.GradientColors.Color1.Value, Color3.fromRGB(0, 255, 0)
 
             local color = baseColor
             if ESP.Settings.BoxSettings.GradientEnabled.Value then
@@ -935,12 +946,11 @@ function Visuals.Init(UI, Core, notify)
                 for _, line in pairs(esp.Box3DLines) do line.Visible = false end
                 
                 if ESP.Settings.BoxSettings.ShowBox.Value then
-                    -- Для 2D: используем увеличенные пропорции (выше и выше)
-                    local headPos = camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, 3.5, 0)) -- Выше голова
-                    local feetPos = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3.5, 0)) -- Выше ноги
+                    local headPos = camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, 3.5, 0))
+                    local feetPos = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3.5, 0))
                     
                     local height = math.abs(headPos.Y - feetPos.Y)
-                    local width = height * 0.5 -- Узкий бокс для 2D
+                    local width = height * 0.5
                     
                     local topLeft = Vector2.new(rootPos.X - width/2, headPos.Y)
                     local topRight = Vector2.new(rootPos.X + width/2, headPos.Y)
@@ -985,15 +995,32 @@ function Visuals.Init(UI, Core, notify)
             if ESP.Settings.BoxSettings.ShowNames.Value then
                 local nameColor = ESP.Settings.BoxSettings.GradientEnabled.Value and color or baseColor
                 
-                -- Исправленный расчет позиции текста
+                -- Исправленный расчет позиции текста - ВЫШЕ бокса
                 local nameY
                 if ESP.Settings.ESPMode.Value == "3D" then
-                    -- Для 3D: позиция выше
-                    nameY = rootPos.Y - 40
+                    -- Для 3D: получаем верхнюю точку бокса
+                    local points = get3DBoxPoints(character, camera)
+                    if points then
+                        -- Находим минимальную Y координату (самую верхнюю точку)
+                        local minY = math.huge
+                        for i = 1, 8 do
+                            if points[i].Y < minY then
+                                minY = points[i].Y
+                            end
+                        end
+                        nameY = minY - 20 -- Выше самой верхней точки бокса
+                    else
+                        nameY = rootPos.Y - 50
+                    end
                 else
-                    -- Для 2D: позиция выше головы
+                    -- Для 2D: выше верхней линии бокса
                     local headPos = camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, 3.5, 0))
-                    nameY = headPos.Y - 25 -- Выше чем было
+                    nameY = headPos.Y - 30 -- Значительно выше головы
+                end
+                
+                -- Проверяем, чтобы текст не уходил за пределы экрана
+                if nameY < 20 then
+                    nameY = 20
                 end
                 
                 if ESP.Settings.TextSettings.TextMethod.Value == "Drawing" then
@@ -1191,16 +1218,16 @@ function Visuals.Init(UI, Core, notify)
             }, 'EnemyColor')
             
             UI.Sections.ESP:Colorpicker({
-                Name = "Friend Color",
-                Default = ESP.Settings.FriendColor.Default,
+                Name = "Team Color",
+                Default = ESP.Settings.TeamColor.Default,
                 Callback = function(value)
-                    ESP.Settings.FriendColor.Value = value
+                    ESP.Settings.TeamColor.Value = value
                     if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
                         ESP.LastNotificationTime = tick()
-                        notify("ESP", "Friend Color updated", true)
+                        notify("ESP", "Team Color updated", true)
                     end
                 end
-            }, 'FriendColor')
+            }, 'TeamColor')
             
             UI.Sections.ESP:Toggle({
                 Name = "Team Check",
