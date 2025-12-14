@@ -10,7 +10,7 @@ function Visuals.Init(UI, Core, notify)
             TouchStartTime = 0, 
             TouchThreshold = 0.2,
             CurrentDesign = "Default",
-            OriginalIcon = nil
+            Mobile = true -- Новый параметр Mobile
         },
         Watermark = { 
             Enabled = true, 
@@ -83,25 +83,43 @@ function Visuals.Init(UI, Core, notify)
 
     local baseFrame = findBaseFrame()
     
+    -- Функция для эмуляции нажатия RightControl
+    local function emulateRightControl()
+        pcall(function()
+            local vim = game:GetService("VirtualInputManager")
+            vim:SendKeyEvent(true, Enum.KeyCode.RightControl, false, game)
+            task.wait()
+            vim:SendKeyEvent(false, Enum.KeyCode.RightControl, false, game)
+        end)
+    end
+    
     -- Функция для показа/скрытия меню
     local function toggleMenuVisibility()
-        if baseFrame then
-            local isVisible = not baseFrame.Visible
-            baseFrame.Visible = isVisible
-            notify("Menu Button", "Menu " .. (isVisible and "Enabled" or "Disabled"), true)
-            return isVisible
-        else
-            -- Если не нашли, пробуем найти снова
-            baseFrame = findBaseFrame()
+        if State.MenuButton.Mobile then
+            -- Mobile режим: меняем видимость Base frame
             if baseFrame then
                 local isVisible = not baseFrame.Visible
                 baseFrame.Visible = isVisible
                 notify("Menu Button", "Menu " .. (isVisible and "Enabled" or "Disabled"), true)
                 return isVisible
             else
-                notify("Menu Button", "Base frame not found!", false)
-                return false
+                -- Если не нашли, пробуем найти снова
+                baseFrame = findBaseFrame()
+                if baseFrame then
+                    local isVisible = not baseFrame.Visible
+                    baseFrame.Visible = isVisible
+                    notify("Menu Button", "Menu " .. (isVisible and "Enabled" or "Disabled"), true)
+                    return isVisible
+                else
+                    notify("Menu Button", "Base frame not found!", false)
+                    return false
+                end
             end
+        else
+            -- Desktop режим: эмулируем RightControl
+            emulateRightControl()
+            notify("Menu Button", "Menu toggled (RightControl emulated)", true)
+            return true
         end
     end
 
@@ -131,9 +149,6 @@ function Visuals.Init(UI, Core, notify)
     buttonIcon.Image = "rbxassetid://73279554401260"
     buttonIcon.Parent = buttonFrame
 
-    -- Сохраняем оригинальную иконку
-    State.MenuButton.OriginalIcon = buttonIcon
-
     -- Функции для разных дизайнов кнопки
     local function applyDefaultDesign()
         -- Сохраняем текущую позицию
@@ -141,15 +156,9 @@ function Visuals.Init(UI, Core, notify)
         
         -- Очищаем старые эффекты Liquid Glass
         for _, child in ipairs(buttonFrame:GetChildren()) do
-            if child.Name == "AcrylicBlur" or child.Name == "IconContainer" or 
-               child.Name == "EdgeGlow" or child.Name == "GlassNoise" then
+            if child.Name ~= "UICorner" and child.Name ~= "MainIcon" then
                 child:Destroy()
             end
-        end
-        
-        -- Восстанавливаем оригинальную иконку
-        if State.MenuButton.OriginalIcon and State.MenuButton.OriginalIcon.Parent ~= buttonFrame then
-            State.MenuButton.OriginalIcon.Parent = buttonFrame
         end
         
         -- Сбрасываем настройки
@@ -159,7 +168,7 @@ function Visuals.Init(UI, Core, notify)
         buttonFrame.Position = currentPos -- Сохраняем позицию
         
         -- Восстанавливаем иконку
-        buttonIcon = State.MenuButton.OriginalIcon
+        buttonIcon.Visible = true
         buttonIcon.Size = UDim2.new(0, 30, 0, 30)
         buttonIcon.Position = UDim2.new(0.5, -15, 0.5, -15)
         buttonIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
@@ -179,31 +188,19 @@ function Visuals.Init(UI, Core, notify)
         
         -- Очищаем старые эффекты
         for _, child in ipairs(buttonFrame:GetChildren()) do
-            if child.Name == "AcrylicBlur" or child.Name == "IconContainer" or 
-               child.Name == "EdgeGlow" or child.Name == "GlassNoise" then
+            if child.Name ~= "UICorner" and child.Name ~= "MainIcon" then
                 child:Destroy()
             end
         end
         
-        -- Сохраняем оригинальную иконку
-        if State.MenuButton.OriginalIcon and State.MenuButton.OriginalIcon.Parent == buttonFrame then
-            State.MenuButton.OriginalIcon:Destroy()
-        end
+        -- Скрываем основную иконку (но не удаляем)
+        buttonIcon.Visible = false
         
         -- Устанавливаем размер и позицию
         buttonFrame.Size = UDim2.new(0, 70, 0, 32)
         buttonFrame.Position = currentPos -- Сохраняем текущую позицию
         buttonFrame.BackgroundColor3 = Color3.fromRGB(40, 60, 100)
         buttonFrame.BackgroundTransparency = 0.6 -- Более прозрачный фон
-        
-        -- Создаем эффект размытия (имитация Acrylic Blur)
-        local blurFrame = Instance.new("Frame")
-        blurFrame.Name = "AcrylicBlur"
-        blurFrame.Size = UDim2.new(1, 0, 1, 0)
-        blurFrame.BackgroundColor3 = Color3.fromRGB(60, 80, 140)
-        blurFrame.BackgroundTransparency = 0.4
-        blurFrame.BorderSizePixel = 0
-        blurFrame.Parent = buttonFrame
         
         -- Скругленные углы
         local corner = buttonFrame:FindFirstChild("UICorner")
@@ -213,13 +210,13 @@ function Visuals.Init(UI, Core, notify)
             Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0, 16)
         end
         
-        -- Отдельный фрейм для иконки (меньше и менее прозрачный)
+        -- Отдельный фрейм для иконки (внутри основного фрейма)
         local iconContainer = Instance.new("Frame")
         iconContainer.Name = "IconContainer"
-        iconContainer.Size = UDim2.new(0, 44, 0, 44) -- Меньше основного фрейма
-        iconContainer.Position = UDim2.new(0.5, -22, 0.5, -22) -- Центрируем
-        iconContainer.BackgroundColor3 = Color3.fromRGB(80, 110, 170)
-        iconContainer.BackgroundTransparency = 0.3 -- Менее прозрачный чем фон
+        iconContainer.Size = UDim2.new(0, 44, 0, 44) -- Размер контейнера
+        iconContainer.Position = UDim2.new(0.5, -22, 0.5, -22) -- Центрируем (22 = 44/2)
+        iconContainer.BackgroundColor3 = Color3.fromRGB(30, 45, 75) -- Темнее чем фон
+        iconContainer.BackgroundTransparency = 0.4 -- Менее прозрачный чем фон
         iconContainer.BorderSizePixel = 0
         iconContainer.Parent = buttonFrame
         
@@ -234,11 +231,8 @@ function Visuals.Init(UI, Core, notify)
         newIcon.Position = UDim2.new(0.5, -14, 0.5, -14)
         newIcon.BackgroundTransparency = 1
         newIcon.Image = "rbxassetid://73279554401260"
-        newIcon.ImageColor3 = Color3.fromRGB(240, 245, 255)
+        newIcon.ImageColor3 = Color3.fromRGB(220, 230, 255) -- Светлая иконка на темном фоне
         newIcon.Parent = iconContainer
-        
-        -- Сохраняем новую иконку
-        buttonIcon = newIcon
         
         -- Локальная переменная для анимации
         local isAnimating = false
@@ -262,7 +256,7 @@ function Visuals.Init(UI, Core, notify)
                     0.5, -originalSize.X.Offset * scale / 2,
                     0.5, -originalSize.Y.Offset * scale / 2
                 )
-                iconContainer.BackgroundTransparency = 0.3 + (i * 0.2) -- Увеличение прозрачности
+                iconContainer.BackgroundTransparency = 0.4 + (i * 0.2) -- Увеличение прозрачности
                 task.wait(0.01)
             end
             
@@ -277,14 +271,14 @@ function Visuals.Init(UI, Core, notify)
                     0.5, -originalSize.X.Offset * scale / 2,
                     0.5, -originalSize.Y.Offset * scale / 2
                 )
-                iconContainer.BackgroundTransparency = 0.5 - (i * 0.2) -- Возврат прозрачности
+                iconContainer.BackgroundTransparency = 0.6 - (i * 0.2) -- Возврат прозрачности
                 task.wait(0.01)
             end
             
             -- Финишная коррекция
             iconContainer.Size = originalSize
             iconContainer.Position = originalPos
-            iconContainer.BackgroundTransparency = 0.3
+            iconContainer.BackgroundTransparency = 0.4
             
             isAnimating = false
         end
@@ -1016,6 +1010,16 @@ function Visuals.Init(UI, Core, notify)
                     notify("Menu Button", "Menu Button " .. (value and "Enabled" or "Disabled"), true)
                 end
             }, 'EnabledMS')
+            
+            -- Добавляем Toggle для Mobile режима
+            UI.Sections.MenuButton:Toggle({
+                Name = "Mobile",
+                Default = State.MenuButton.Mobile,
+                Callback = function(value)
+                    State.MenuButton.Mobile = value
+                    notify("Menu Button", "Mobile mode " .. (value and "Enabled" or "Disabled"), true)
+                end
+            }, 'MobileMode')
             
             -- Добавляем Dropdown для выбора дизайна
             UI.Sections.MenuButton:Dropdown({
