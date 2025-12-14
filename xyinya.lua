@@ -72,8 +72,7 @@ function Visuals.Init(UI, Core, notify)
     
     -- Ищем Base frame в RobloxGui
     local function findBaseFrame()
-        local children = RobloxGui:GetChildren()
-        for _, child in ipairs(children) do
+        for _, child in ipairs(RobloxGui:GetDescendants()) do
             if child:IsA("Frame") and child.Name == "Base" then
                 return child
             end
@@ -90,14 +89,25 @@ function Visuals.Init(UI, Core, notify)
             baseFrame.Visible = isVisible
             notify("Menu Button", "Menu " .. (isVisible and "Enabled" or "Disabled"), true)
             return isVisible
+        else
+            -- Если не нашли, пробуем найти снова
+            baseFrame = findBaseFrame()
+            if baseFrame then
+                local isVisible = not baseFrame.Visible
+                baseFrame.Visible = isVisible
+                notify("Menu Button", "Menu " .. (isVisible and "Enabled" or "Disabled"), true)
+                return isVisible
+            else
+                notify("Menu Button", "Base frame not found!", false)
+                return false
+            end
         end
-        return false
     end
 
     -- Создаем кнопку меню
     local buttonGui = Instance.new("ScreenGui")
     buttonGui.Name = "MenuToggleButtonGui"
-    buttonGui.Parent = RobloxGui -- Переносим в RobloxGui
+    buttonGui.Parent = RobloxGui
     buttonGui.ResetOnSpawn = false
     buttonGui.IgnoreGuiInset = false
 
@@ -121,83 +131,218 @@ function Visuals.Init(UI, Core, notify)
 
     -- Функции для разных дизайнов кнопки
     local function applyDefaultDesign()
+        -- Очищаем старые эффекты
+        for _, child in ipairs(buttonFrame:GetChildren()) do
+            if child.Name ~= "UICorner" and child ~= buttonIcon then
+                child:Destroy()
+            end
+        end
+        
+        -- Сбрасываем настройки
         buttonFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
         buttonFrame.BackgroundTransparency = 0.3
         buttonFrame.Size = UDim2.new(0, 50, 0, 50)
+        buttonFrame.Position = State.MenuButton.StartPos or UDim2.new(0, 100, 0, 100)
+        
+        -- Восстанавливаем иконку
         buttonIcon.Image = "rbxassetid://73279554401260"
         buttonIcon.Size = UDim2.new(0, 30, 0, 30)
+        buttonIcon.Position = UDim2.new(0.5, -15, 0.5, -15)
+        buttonIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
+        
+        -- Восстанавливаем скругление
+        local corner = buttonFrame:FindFirstChild("UICorner")
+        if corner then
+            corner.CornerRadius = UDim.new(0.5, 0)
+        else
+            Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0.5, 0)
+        end
     end
 
     local function applyLiquidGlassDesign()
-        buttonFrame.BackgroundColor3 = Color3.fromRGB(40, 60, 80)
-        buttonFrame.BackgroundTransparency = 0.15
+        -- Очищаем старые эффекты
+        for _, child in ipairs(buttonFrame:GetChildren()) do
+            if child.Name ~= "UICorner" and child ~= buttonIcon then
+                child:Destroy()
+            end
+        end
+        
+        -- Устанавливаем позицию вверху экрана по центру
+        buttonFrame.Position = UDim2.new(0.5, -60, 0, 20)
         buttonFrame.Size = UDim2.new(0, 120, 0, 40)
-        buttonFrame.Position = UDim2.new(0.5, -60, 0, 10) -- Верх экрана по центру
+        buttonFrame.BackgroundColor3 = Color3.fromRGB(40, 60, 100)
+        buttonFrame.BackgroundTransparency = 0.1
+        
+        -- Создаем эффект стекла с градиентом
+        local glassBackground = Instance.new("Frame")
+        glassBackground.Name = "GlassBackground"
+        glassBackground.Size = UDim2.new(1, 0, 1, 0)
+        glassBackground.BackgroundTransparency = 1
+        glassBackground.Parent = buttonFrame
+        
+        -- Верхний слой градиента
+        local topGradient = Instance.new("UIGradient")
+        topGradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(70, 100, 150)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(40, 60, 100)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(70, 100, 150))
+        }
+        topGradient.Transparency = NumberSequence.new{
+            NumberSequenceKeypoint.new(0, 0.3),
+            NumberSequenceKeypoint.new(0.5, 0.1),
+            NumberSequenceKeypoint.new(1, 0.3)
+        }
+        topGradient.Rotation = 0
+        topGradient.Parent = glassBackground
+        
+        -- Слой с бликами
+        local highlights = Instance.new("Frame")
+        highlights.Name = "Highlights"
+        highlights.Size = UDim2.new(1, 0, 0.5, 0)
+        highlights.Position = UDim2.new(0, 0, 0, 0)
+        highlights.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        highlights.BackgroundTransparency = 0.7
+        highlights.BorderSizePixel = 0
+        highlights.Parent = buttonFrame
+        
+        local highlightsCorner = Instance.new("UICorner")
+        highlightsCorner.CornerRadius = UDim.new(0, 12)
+        highlightsCorner.Parent = highlights
+        
+        -- Обводка с градиентом
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = Color3.fromRGB(60, 90, 140)
+        stroke.Thickness = 2
+        stroke.Transparency = 0.3
+        stroke.Parent = buttonFrame
+        
+        -- Эффект свечения
+        local glow = Instance.new("ImageLabel")
+        glow.Name = "Glow"
+        glow.Size = UDim2.new(1.2, 0, 1.2, 0)
+        glow.Position = UDim2.new(-0.1, 0, -0.1, 0)
+        glow.BackgroundTransparency = 1
+        glow.Image = "rbxassetid://8992230671"
+        glow.ImageColor3 = Color3.fromRGB(40, 60, 100)
+        glow.ImageTransparency = 0.7
+        glow.ScaleType = Enum.ScaleType.Slice
+        glow.SliceCenter = Rect.new(100, 100, 100, 100)
+        glow.Parent = buttonFrame
+        
+        -- Скругленные углы
+        local corner = buttonFrame:FindFirstChild("UICorner")
+        if corner then
+            corner.CornerRadius = UDim.new(0, 12)
+        else
+            Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0, 12)
+        end
         
         -- Обновляем иконку
         buttonIcon.Image = "rbxassetid://73279554401260"
         buttonIcon.Size = UDim2.new(0, 24, 0, 24)
         buttonIcon.Position = UDim2.new(0.5, -12, 0.5, -12)
+        buttonIcon.ImageColor3 = Color3.fromRGB(180, 200, 255)
         
-        -- Добавляем эффект стекла
-        local glassEffect = Instance.new("Frame")
-        glassEffect.Name = "GlassEffect"
-        glassEffect.Size = UDim2.new(1, 0, 0.5, 0)
-        glassEffect.Position = UDim2.new(0, 0, 0, 0)
-        glassEffect.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        glassEffect.BackgroundTransparency = 0.8
-        glassEffect.BorderSizePixel = 0
-        glassEffect.Parent = buttonFrame
-        
-        Instance.new("UICorner", glassEffect).CornerRadius = UDim.new(0, 5)
+        -- Анимация градиента
+        task.spawn(function()
+            while State.MenuButton.CurrentDesign == "Liquid Glass" do
+                for i = 0, 1, 0.01 do
+                    if State.MenuButton.CurrentDesign ~= "Liquid Glass" then break end
+                    topGradient.Rotation = i * 360
+                    highlights.BackgroundTransparency = 0.7 + math.sin(tick() * 2) * 0.1
+                    task.wait(0.05)
+                end
+            end
+        end)
     end
 
-    local function applyModernDesign()
-        buttonFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
-        buttonFrame.BackgroundTransparency = 0.1
+    local function applyNeonDesign()
+        -- Очищаем старые эффекты
+        for _, child in ipairs(buttonFrame:GetChildren()) do
+            if child.Name ~= "UICorner" and child ~= buttonIcon then
+                child:Destroy()
+            end
+        end
+        
+        -- Устанавливаем позицию
+        buttonFrame.Position = State.MenuButton.StartPos or UDim2.new(0, 100, 0, 100)
         buttonFrame.Size = UDim2.new(0, 60, 0, 60)
+        buttonFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
+        buttonFrame.BackgroundTransparency = 0.8
         
-        -- Добавляем градиент
-        local gradient = Instance.new("UIGradient")
-        gradient.Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 45, 70)),
-            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(20, 30, 50)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(30, 45, 70))
-        }
-        gradient.Rotation = 45
-        gradient.Parent = buttonFrame
+        -- Эффект неоновой обводки
+        local neonStroke = Instance.new("UIStroke")
+        neonStroke.Color = Color3.fromRGB(0, 170, 255)
+        neonStroke.Thickness = 3
+        neonStroke.Transparency = 0.2
+        neonStroke.Parent = buttonFrame
         
-        -- Добавляем обводку
-        local stroke = Instance.new("UIStroke")
-        stroke.Color = Color3.fromRGB(60, 90, 120)
-        stroke.Thickness = 2
-        stroke.Transparency = 0.3
-        stroke.Parent = buttonFrame
+        -- Внутренняя подсветка
+        local innerGlow = Instance.new("Frame")
+        innerGlow.Name = "InnerGlow"
+        innerGlow.Size = UDim2.new(0.8, 0, 0.8, 0)
+        innerGlow.Position = UDim2.new(0.1, 0, 0.1, 0)
+        innerGlow.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+        innerGlow.BackgroundTransparency = 0.9
+        innerGlow.BorderSizePixel = 0
+        innerGlow.Parent = buttonFrame
+        
+        local innerCorner = Instance.new("UICorner")
+        innerCorner.CornerRadius = UDim.new(0.5, 0)
+        innerCorner.Parent = innerGlow
+        
+        -- Внешнее свечение
+        local outerGlow = Instance.new("ImageLabel")
+        outerGlow.Name = "OuterGlow"
+        outerGlow.Size = UDim2.new(1.5, 0, 1.5, 0)
+        outerGlow.Position = UDim2.new(-0.25, 0, -0.25, 0)
+        outerGlow.BackgroundTransparency = 1
+        outerGlow.Image = "rbxassetid://8992230671"
+        outerGlow.ImageColor3 = Color3.fromRGB(0, 100, 255)
+        outerGlow.ImageTransparency = 0.8
+        outerGlow.ScaleType = Enum.ScaleType.Slice
+        outerGlow.SliceCenter = Rect.new(100, 100, 100, 100)
+        outerGlow.Parent = buttonFrame
+        
+        -- Скругленные углы
+        local corner = buttonFrame:FindFirstChild("UICorner")
+        if corner then
+            corner.CornerRadius = UDim.new(0.5, 0)
+        else
+            Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0.5, 0)
+        end
         
         -- Обновляем иконку
         buttonIcon.Image = "rbxassetid://73279554401260"
         buttonIcon.Size = UDim2.new(0, 32, 0, 32)
         buttonIcon.Position = UDim2.new(0.5, -16, 0.5, -16)
-        buttonIcon.ImageColor3 = Color3.fromRGB(200, 220, 255)
+        buttonIcon.ImageColor3 = Color3.fromRGB(0, 200, 255)
+        
+        -- Анимация пульсации
+        task.spawn(function()
+            while State.MenuButton.CurrentDesign == "Neon" do
+                for i = 0, 1, 0.02 do
+                    if State.MenuButton.CurrentDesign ~= "Neon" then break end
+                    local pulse = 0.2 + math.sin(tick() * 3) * 0.1
+                    neonStroke.Transparency = 0.2 + pulse
+                    innerGlow.BackgroundTransparency = 0.9 + pulse
+                    outerGlow.ImageTransparency = 0.8 + pulse * 0.5
+                    task.wait(0.03)
+                end
+            end
+        end)
     end
 
     -- Применяем текущий дизайн
     local function applyDesign(designName)
-        -- Очищаем старые эффекты
-        for _, child in ipairs(buttonFrame:GetChildren()) do
-            if child.Name == "GlassEffect" or child:IsA("UIGradient") or child:IsA("UIStroke") then
-                child:Destroy()
-            end
-        end
-        
         State.MenuButton.CurrentDesign = designName
         
         if designName == "Default" then
             applyDefaultDesign()
         elseif designName == "Liquid Glass" then
             applyLiquidGlassDesign()
-        elseif designName == "Modern" then
-            applyModernDesign()
+        elseif designName == "Neon" then
+            applyNeonDesign()
         end
     end
 
@@ -208,7 +353,13 @@ function Visuals.Init(UI, Core, notify)
     buttonFrame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             State.MenuButton.TouchStartTime = tick()
-            local mousePos = input.UserInputType == Enum.UserInputType.Touch and input.Position or Core.Services.UserInputService:GetMouseLocation()
+            local mousePos
+            if input.UserInputType == Enum.UserInputType.Touch then
+                mousePos = Vector2.new(input.Position.X, input.Position.Y)
+            else
+                mousePos = Core.Services.UserInputService:GetMouseLocation()
+            end
+            
             if mousePos then
                 State.MenuButton.Dragging = true
                 State.MenuButton.DragStart = mousePos
@@ -219,8 +370,14 @@ function Visuals.Init(UI, Core, notify)
 
     Core.Services.UserInputService.InputChanged:Connect(function(input)
         if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and State.MenuButton.Dragging then
-            local mousePos = input.UserInputType == Enum.UserInputType.Touch and input.Position or Core.Services.UserInputService:GetMouseLocation()
-            if mousePos then
+            local mousePos
+            if input.UserInputType == Enum.UserInputType.Touch then
+                mousePos = Vector2.new(input.Position.X, input.Position.Y)
+            else
+                mousePos = Core.Services.UserInputService:GetMouseLocation()
+            end
+            
+            if mousePos and State.MenuButton.DragStart and State.MenuButton.StartPos then
                 local delta = mousePos - State.MenuButton.DragStart
                 buttonFrame.Position = UDim2.new(0, State.MenuButton.StartPos.X.Offset + delta.X, 0, State.MenuButton.StartPos.Y.Offset + delta.Y)
             end
@@ -263,7 +420,7 @@ function Visuals.Init(UI, Core, notify)
         gui.ResetOnSpawn = false
         gui.IgnoreGuiInset = true
         gui.Enabled = State.Watermark.Enabled
-        gui.Parent = RobloxGui -- Переносим в RobloxGui
+        gui.Parent = RobloxGui
         elements.Gui = gui
 
         local container = Instance.new("Frame")
@@ -487,7 +644,7 @@ function Visuals.Init(UI, Core, notify)
             local delta = mousePos - target.DragStart
             element.Position = UDim2.new(0, target.StartPos.X.Offset + delta.X, 0, target.StartPos.Y.Offset + delta.Y)
         elseif input.UserInputType == Enum.UserInputType.Touch then
-            mousePos = input.Position
+            mousePos = Vector2.new(input.Position.X, input.Position.Y)
             if input.UserInputState == Enum.UserInputState.Begin then
                 if element and mousePos.X >= element.Position.X.Offset and mousePos.X <= element.Position.X.Offset + element.Size.X.Offset and
                    mousePos.Y >= element.Position.Y.Offset and mousePos.Y <= element.Position.Y.Offset + element.Size.Y.Offset then
@@ -536,7 +693,7 @@ function Visuals.Init(UI, Core, notify)
     ESPGui.Name = "notSPTextGui"
     ESPGui.ResetOnSpawn = false
     ESPGui.IgnoreGuiInset = true
-    ESPGui.Parent = RobloxGui -- Переносим в RobloxGui
+    ESPGui.Parent = RobloxGui
 
     local supportsQuad = pcall(function()
         local test = Drawing.new("Quad")
@@ -889,7 +1046,7 @@ function Visuals.Init(UI, Core, notify)
             -- Добавляем Dropdown для выбора дизайна
             UI.Sections.MenuButton:Dropdown({
                 Name = "Design",
-                Options = {"Default", "Liquid Glass", "Modern"},
+                Options = {"Default", "Liquid Glass", "Neon"},
                 Default = "Default",
                 Callback = function(value)
                     applyDesign(value)
