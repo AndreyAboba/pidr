@@ -396,7 +396,7 @@ local function drawEndpoint(pos)
         
         if l then
             l.From = Vector2.new(s1.X, s1.Y) 
-            l.To = Vector2.new(s2.X, sb.Y) 
+            l.To = Vector2.new(s2.X, s2.Y) 
             l.Visible = s1.Z > 0 and s2.Z > 0
         end
     end
@@ -1844,3 +1844,4 @@ function GKHelperModule:Destroy()
 end
 
 return GKHelperModule
+
