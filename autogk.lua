@@ -1400,7 +1400,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
         moduleState.uiElements.Gravity = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Gravity",
             Minimum = 80,
-            Maximum = 168,
+            Maximum = 198.2,
             Default = CONFIG.GRAVITY,
             Precision = 1,
             Callback = function(v) CONFIG.GRAVITY = v end
@@ -1635,4 +1635,5 @@ function GKHelperModule:Destroy()
 end
 
 return GKHelperModule
+
 
