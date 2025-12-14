@@ -38,7 +38,7 @@ function Visuals.Init(UI, Core, notify)
     local ESP = {
         Settings = {
             Enabled = { Value = false, Default = false },
-            ESPMode = { Value = "2D", Default = "2D" }, -- Новый параметр: 2D или 3D
+            ESPMode = { Value = "2D", Default = "2D" },
             EnemyColor = { Value = Color3.fromRGB(255, 0, 0), Default = Color3.fromRGB(255, 0, 0) },
             FriendColor = { Value = Color3.fromRGB(0, 255, 0), Default = Color3.fromRGB(0, 255, 0) },
             TeamCheck = { Value = true, Default = true },
@@ -56,27 +56,21 @@ function Visuals.Init(UI, Core, notify)
                 TextSize = { Value = 14, Default = 14 },
                 TextFont = { Value = Drawing.Fonts.Plex, Default = Drawing.Fonts.Plex },
                 TextMethod = { Value = "Drawing", Default = "Drawing" }
-            },
-            PlayerFilter = {
-                MaxDistance = { Value = 500, Default = 500 },
-                MinFOV = { Value = 30, Default = 30 }
             }
         },
         Elements = {},
         GuiElements = {},
         LastNotificationTime = 0,
         NotificationDelay = 5,
-        CloseDistance = 300,
-        NearFPS = 50,
-        DefaultFPS = 30
+        UpdateInterval = 1 / 60, -- 60 FPS
+        LastUpdateTime = 0
     }
 
     local Cache = { 
         TextBounds = {}, 
         LastGradientUpdate = 0, 
-        PlayerCache = {}, 
-        LastUpdateTimes = {},
-        PlayerBoxCache = {} -- Кэш для стабильных размеров боксов
+        PlayerCache = {},
+        PlayerBoxCache = {}
     }
     
     local Elements = { Watermark = {} }
@@ -110,14 +104,12 @@ function Visuals.Init(UI, Core, notify)
     -- Функция для показа/скрытия меню
     local function toggleMenuVisibility()
         if State.MenuButton.Mobile then
-            -- Mobile режим: меняем видимость Base frame
             if baseFrame then
                 local isVisible = not baseFrame.Visible
                 baseFrame.Visible = isVisible
                 notify("Menu Button", "Menu " .. (isVisible and "Enabled" or "Disabled"), true)
                 return isVisible
             else
-                -- Если не нашли, пробуем найти снова
                 baseFrame = findBaseFrame()
                 if baseFrame then
                     local isVisible = not baseFrame.Visible
@@ -130,7 +122,6 @@ function Visuals.Init(UI, Core, notify)
                 end
             end
         else
-            -- Desktop режим: эмулируем RightControl
             emulateRightControl()
             notify("Menu Button", "Menu toggled (RightControl emulated)", true)
             return true
@@ -165,29 +156,24 @@ function Visuals.Init(UI, Core, notify)
 
     -- Функции для разных дизайнов кнопки
     local function applyDefaultDesign()
-        -- Сохраняем текущую позицию
         local currentPos = buttonFrame.Position
         
-        -- Очищаем старые эффекты Default v2
         for _, child in ipairs(buttonFrame:GetChildren()) do
             if child.Name ~= "UICorner" and child.Name ~= "MainIcon" then
                 child:Destroy()
             end
         end
         
-        -- Сбрасываем настройки
         buttonFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
         buttonFrame.BackgroundTransparency = 0.3
         buttonFrame.Size = UDim2.new(0, 50, 0, 50)
-        buttonFrame.Position = currentPos -- Сохраняем позицию
+        buttonFrame.Position = currentPos
         
-        -- Восстанавливаем иконку
         buttonIcon.Visible = true
         buttonIcon.Size = UDim2.new(0, 30, 0, 30)
         buttonIcon.Position = UDim2.new(0.5, -15, 0.5, -15)
         buttonIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
         
-        -- Восстанавливаем скругление
         local corner = buttonFrame:FindFirstChild("UICorner")
         if corner then
             corner.CornerRadius = UDim.new(0.5, 0)
@@ -197,26 +183,21 @@ function Visuals.Init(UI, Core, notify)
     end
 
     local function applyDefaultV2Design()
-        -- Сохраняем текущую позицию
         local currentPos = buttonFrame.Position
         
-        -- Очищаем старые эффекты
         for _, child in ipairs(buttonFrame:GetChildren()) do
             if child.Name ~= "UICorner" and child.Name ~= "MainIcon" then
                 child:Destroy()
             end
         end
         
-        -- Скрываем основную иконку (но не удаляем)
         buttonIcon.Visible = false
         
-        -- Устанавливаем размер и позицию
         buttonFrame.Size = UDim2.new(0, 48, 0, 48)
         buttonFrame.Position = currentPos
         buttonFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
         buttonFrame.BackgroundTransparency = 0.6
         
-        -- Круглый фон
         local corner = buttonFrame:FindFirstChild("UICorner")
         if corner then
             corner.CornerRadius = UDim.new(0.5, 0)
@@ -224,7 +205,6 @@ function Visuals.Init(UI, Core, notify)
             Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0.5, 0)
         end
         
-        -- Отдельный фрейм для иконки
         local iconContainer = Instance.new("Frame")
         iconContainer.Name = "IconContainer"
         iconContainer.Size = UDim2.new(0, 40, 0, 40)
@@ -682,87 +662,45 @@ function Visuals.Init(UI, Core, notify)
         test:Remove()
     end)
 
-    -- Функция для расчета 3D бокса
-    local function calculate3DBoxCorners(character, camera)
-        local corners = {}
-        
-        -- Получаем все части персонажа
-        local parts = {}
-        for _, part in pairs(character:GetChildren()) do
-            if part:IsA("BasePart") then
-                table.insert(parts, part)
-            end
+    -- Функция для получения размеров персонажа
+    local function getCharacterSize(character)
+        local humanoid = character:FindFirstChild("Humanoid")
+        if humanoid then
+            return Vector3.new(2, humanoid.HipHeight * 2 + 2, 1)
         end
-        
-        if #parts == 0 then return nil end
-        
-        -- Находим минимальные и максимальные координаты
-        local minX, minY, minZ = math.huge, math.huge, math.huge
-        local maxX, maxY, maxZ = -math.huge, -math.huge, -math.huge
-        
-        for _, part in pairs(parts) do
-            local pos = part.Position
-            local size = part.Size / 2
-            
-            minX = math.min(minX, pos.X - size.X)
-            minY = math.min(minY, pos.Y - size.Y)
-            minZ = math.min(minZ, pos.Z - size.Z)
-            
-            maxX = math.max(maxX, pos.X + size.X)
-            maxY = math.max(maxY, pos.Y + size.Y)
-            maxZ = math.max(maxZ, pos.Z + size.Z)
-        end
-        
-        -- Определяем углы 3D бокса
-        local corners3D = {
-            Vector3.new(minX, minY, minZ), -- Нижний задний левый
-            Vector3.new(maxX, minY, minZ), -- Нижний задний правый
-            Vector3.new(maxX, maxY, minZ), -- Верхний задний правый
-            Vector3.new(minX, maxY, minZ), -- Верхний задний левый
-            Vector3.new(minX, minY, maxZ), -- Нижний передний левый
-            Vector3.new(maxX, minY, maxZ), -- Нижний передний правый
-            Vector3.new(maxX, maxY, maxZ), -- Верхний передний правый
-            Vector3.new(minX, maxY, maxZ)  -- Верхний передний левый
-        }
-        
-        -- Преобразуем в 2D координаты
-        for i, corner3D in pairs(corners3D) do
-            local corner2D, visible = camera:WorldToViewportPoint(corner3D)
-            if not visible then return nil end
-            corners[i] = Vector2.new(corner2D.X, corner2D.Y)
-        end
-        
-        return corners
+        return Vector3.new(3, 5, 1)
     end
 
-    -- Функция для получения стабильных размеров бокса
-    local function getStableBoxSize(player, character, camera)
-        -- Используем кэшированные размеры если есть
-        if Cache.PlayerBoxCache[player] then
-            local cache = Cache.PlayerBoxCache[player]
-            if tick() - cache.lastUpdate < 1 then -- Обновляем каждую секунду
-                return cache.width, cache.height
-            end
-        end
+    -- Функция для расчета 3D точек
+    local function get3DBoxPoints(character, camera)
+        local size = getCharacterSize(character)
+        local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head") or character:FindFirstChild("Torso")
+        if not rootPart then return nil end
         
-        -- Получаем Humanoid для высоты
-        local humanoid = character:FindFirstChild("Humanoid")
-        if not humanoid then
-            return 40, 80 -- Размеры по умолчанию
-        end
+        local cf = rootPart.CFrame
+        local points = {}
         
-        -- Стабильные размеры на основе высоты персонажа
-        local height = humanoid.HipHeight * 2 + 4
-        local width = height * 0.5
-        
-        -- Кэшируем результат
-        Cache.PlayerBoxCache[player] = {
-            width = width,
-            height = height,
-            lastUpdate = tick()
+        -- 8 углов куба
+        local corners = {
+            Vector3.new(-size.X/2, -size.Y/2, -size.Z/2),
+            Vector3.new(size.X/2, -size.Y/2, -size.Z/2),
+            Vector3.new(size.X/2, size.Y/2, -size.Z/2),
+            Vector3.new(-size.X/2, size.Y/2, -size.Z/2),
+            Vector3.new(-size.X/2, -size.Y/2, size.Z/2),
+            Vector3.new(size.X/2, -size.Y/2, size.Z/2),
+            Vector3.new(size.X/2, size.Y/2, size.Z/2),
+            Vector3.new(-size.X/2, size.Y/2, size.Z/2)
         }
         
-        return width, height
+        -- Преобразуем в мировые координаты и затем в 2D
+        for i, corner in ipairs(corners) do
+            local worldPos = cf:PointToWorldSpace(corner)
+            local screenPos, visible = camera:WorldToViewportPoint(worldPos)
+            if not visible then return nil end
+            points[i] = Vector2.new(screenPos.X, screenPos.Y)
+        end
+        
+        return points
     end
 
     local function createESP(player)
@@ -775,7 +713,6 @@ function Visuals.Init(UI, Core, notify)
                 Left = Drawing.new("Line"),
                 Right = Drawing.new("Line")
             },
-            -- Линии для 3D бокса
             Box3DLines = {},
             Filled = supportsQuad and Drawing.new("Quad") or Drawing.new("Square"),
             NameDrawing = Drawing.new("Text"),
@@ -792,14 +729,12 @@ function Visuals.Init(UI, Core, notify)
             line.Visible = false
         end
 
-        -- Создаем линии для 3D бокса (12 линий для куба)
-        if ESP.Settings.ESPMode.Value == "3D" then
-            for i = 1, 12 do
-                esp.Box3DLines[i] = Drawing.new("Line")
-                esp.Box3DLines[i].Thickness = ESP.Settings.BoxSettings.Thickness.Value
-                esp.Box3DLines[i].Transparency = 1 - ESP.Settings.BoxSettings.Transparency.Value
-                esp.Box3DLines[i].Visible = false
-            end
+        -- Создаем 12 линий для 3D куба
+        for i = 1, 12 do
+            esp.Box3DLines[i] = Drawing.new("Line")
+            esp.Box3DLines[i].Thickness = ESP.Settings.BoxSettings.Thickness.Value
+            esp.Box3DLines[i].Transparency = 1 - ESP.Settings.BoxSettings.Transparency.Value
+            esp.Box3DLines[i].Visible = false
         end
 
         esp.Filled.Filled = true
@@ -842,15 +777,23 @@ function Visuals.Init(UI, Core, notify)
         end
         ESP.Elements[player] = nil
         Cache.PlayerCache[player] = nil
-        Cache.LastUpdateTimes[player] = nil
         Cache.PlayerBoxCache[player] = nil
     end
 
+    -- Основная функция обновления ESP
     local function updateESP()
+        local currentTime = tick()
+        
+        -- Проверяем интервал для 60 FPS
+        if currentTime - ESP.LastUpdateTime < ESP.UpdateInterval then
+            return
+        end
+        ESP.LastUpdateTime = currentTime
+        
         if not ESP.Settings.Enabled.Value then
             for _, esp in pairs(ESP.Elements) do
                 for _, line in pairs(esp.BoxLines) do line.Visible = false end
-                for _, line in pairs(esp.Box3DLines or {}) do line.Visible = false end
+                for _, line in pairs(esp.Box3DLines) do line.Visible = false end
                 esp.Filled.Visible = false
                 esp.NameDrawing.Visible = false
                 if esp.NameGui then esp.NameGui.Visible = false end
@@ -859,17 +802,10 @@ function Visuals.Init(UI, Core, notify)
             return
         end
 
-        local currentTime = tick()
         local camera = Core.PlayerData.Camera
         if not camera then return end
 
         local localPlayer = Core.PlayerData.LocalPlayer
-        local localCharacter = localPlayer.Character
-        local localRootPart = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
-        if not localRootPart then return end
-
-        local cameraPos = camera.CFrame.Position
-        local viewportSize = camera.ViewportSize
 
         for _, player in pairs(Core.Services.Players:GetPlayers()) do
             if player == localPlayer then continue end
@@ -885,26 +821,10 @@ function Visuals.Init(UI, Core, notify)
             local humanoid = character and character:FindFirstChild("Humanoid")
             local rootPart = character and character:FindFirstChild("HumanoidRootPart")
 
-            -- Проверка расстояния
-            if rootPart then
-                local distance = (rootPart.Position - cameraPos).Magnitude
-                if distance > ESP.Settings.PlayerFilter.MaxDistance.Value then
-                    if esp.LastVisible then
-                        for _, line in pairs(esp.BoxLines) do line.Visible = false end
-                        for _, line in pairs(esp.Box3DLines or {}) do line.Visible = false end
-                        esp.Filled.Visible = false
-                        esp.NameDrawing.Visible = false
-                        if esp.NameGui then esp.NameGui.Visible = false end
-                        esp.LastVisible = false
-                    end
-                    continue
-                end
-            end
-
-            if not rootPart or not humanoid or humanoid.Health <= 0 then
+            if not character or not humanoid or not rootPart or humanoid.Health <= 0 then
                 if esp.LastVisible then
                     for _, line in pairs(esp.BoxLines) do line.Visible = false end
-                    for _, line in pairs(esp.Box3DLines or {}) do line.Visible = false end
+                    for _, line in pairs(esp.Box3DLines) do line.Visible = false end
                     esp.Filled.Visible = false
                     esp.NameDrawing.Visible = false
                     if esp.NameGui then esp.NameGui.Visible = false end
@@ -913,32 +833,12 @@ function Visuals.Init(UI, Core, notify)
                 continue
             end
 
-            -- Обновление с интервалами для стабильности
-            local updateInterval = 1 / 30 -- Фиксированный FPS для стабильности
-            if currentTime - (Cache.LastUpdateTimes[player] or 0) < updateInterval then
-                continue
-            end
-            Cache.LastUpdateTimes[player] = currentTime
-
             local rootPos, onScreen = camera:WorldToViewportPoint(rootPart.Position)
-            
-            -- Проверка FOV
-            if onScreen then
-                local screenPos = Vector2.new(rootPos.X, rootPos.Y)
-                local screenCenter = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
-                local screenDist = (screenPos - screenCenter).Magnitude
-                local fov = camera.FieldOfView
-                local maxScreenDist = math.min(viewportSize.X, viewportSize.Y) * (fov / 180)
-                
-                if screenDist > maxScreenDist * (ESP.Settings.PlayerFilter.MinFOV.Value / 100) then
-                    onScreen = false
-                end
-            end
             
             if not onScreen then
                 if esp.LastVisible then
                     for _, line in pairs(esp.BoxLines) do line.Visible = false end
-                    for _, line in pairs(esp.Box3DLines or {}) do line.Visible = false end
+                    for _, line in pairs(esp.Box3DLines) do line.Visible = false end
                     esp.Filled.Visible = false
                     esp.NameDrawing.Visible = false
                     if esp.NameGui then esp.NameGui.Visible = false end
@@ -960,31 +860,30 @@ function Visuals.Init(UI, Core, notify)
             local baseColor = (isFriend and ESP.Settings.TeamCheck.Value) and ESP.Settings.FriendColor.Value or ESP.Settings.EnemyColor.Value
             local gradColor1, gradColor2 = Core.GradientColors.Color1.Value, (isFriend and ESP.Settings.TeamCheck.Value) and Color3.fromRGB(0, 255, 0) or Core.GradientColors.Color2.Value
 
+            local color = baseColor
+            if ESP.Settings.BoxSettings.GradientEnabled.Value then
+                local t = (math.sin(currentTime * ESP.Settings.BoxSettings.GradientSpeed.Value * 0.5) + 1) / 2
+                color = gradColor1:Lerp(gradColor2, t)
+            end
+
             if ESP.Settings.ESPMode.Value == "3D" then
-                -- 3D режим
-                local corners = calculate3DBoxCorners(character, camera)
-                if corners then
-                    -- Определяем соединения для 3D куба (12 линий)
+                -- 3D ESP
+                local points = get3DBoxPoints(character, camera)
+                
+                if points and ESP.Settings.BoxSettings.ShowBox.Value then
+                    -- Определяем соединения для куба (12 линий)
                     local connections = {
                         {1, 2}, {2, 3}, {3, 4}, {4, 1}, -- Задняя грань
                         {5, 6}, {6, 7}, {7, 8}, {8, 5}, -- Передняя грань
                         {1, 5}, {2, 6}, {3, 7}, {4, 8}  -- Соединительные линии
                     }
                     
-                    local color = baseColor
-                    if ESP.Settings.BoxSettings.GradientEnabled.Value then
-                        local t = (math.sin(currentTime * ESP.Settings.BoxSettings.GradientSpeed.Value * 0.5) + 1) / 2
-                        color = gradColor1:Lerp(gradColor2, t)
-                    end
-                    
-                    for i, connection in pairs(connections) do
+                    for i, conn in ipairs(connections) do
                         if esp.Box3DLines[i] then
-                            esp.Box3DLines[i].From = corners[connection[1]]
-                            esp.Box3DLines[i].To = corners[connection[2]]
+                            esp.Box3DLines[i].From = points[conn[1]]
+                            esp.Box3DLines[i].To = points[conn[2]]
                             esp.Box3DLines[i].Color = color
-                            esp.Box3DLines[i].Thickness = ESP.Settings.BoxSettings.Thickness.Value
-                            esp.Box3DLines[i].Transparency = 1 - ESP.Settings.BoxSettings.Transparency.Value
-                            esp.Box3DLines[i].Visible = ESP.Settings.BoxSettings.ShowBox.Value
+                            esp.Box3DLines[i].Visible = true
                         end
                     end
                     
@@ -992,32 +891,23 @@ function Visuals.Init(UI, Core, notify)
                     for _, line in pairs(esp.BoxLines) do line.Visible = false end
                     esp.Filled.Visible = false
                 else
-                    for _, line in pairs(esp.Box3DLines or {}) do line.Visible = false end
+                    for _, line in pairs(esp.Box3DLines) do line.Visible = false end
                 end
             else
-                -- 2D режим (оригинальный)
-                local width, height = getStableBoxSize(player, character, camera)
-                local headPos = camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, height/2, 0))
-                local feetPos = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, height/2, 0))
+                -- 2D ESP
+                for _, line in pairs(esp.Box3DLines) do line.Visible = false end
                 
-                local topLeft = Vector2.new(rootPos.X - width / 2, headPos.Y)
-                local topRight = Vector2.new(rootPos.X + width / 2, headPos.Y)
-                local bottomLeft = Vector2.new(rootPos.X - width / 2, feetPos.Y)
-                local bottomRight = Vector2.new(rootPos.X + width / 2, feetPos.Y)
-
                 if ESP.Settings.BoxSettings.ShowBox.Value then
-                    local color = baseColor
-                    if ESP.Settings.BoxSettings.GradientEnabled.Value then
-                        local t = (math.sin(currentTime * ESP.Settings.BoxSettings.GradientSpeed.Value * 0.5) + 1) / 2
-                        color = gradColor1:Lerp(gradColor2, t)
-                    end
-
-                    for _, line in pairs(esp.BoxLines) do
-                        line.Color = color
-                        line.Thickness = ESP.Settings.BoxSettings.Thickness.Value
-                        line.Transparency = 1 - ESP.Settings.BoxSettings.Transparency.Value
-                        line.Visible = true
-                    end
+                    local headPos = camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, 2.5, 0))
+                    local feetPos = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3, 0))
+                    
+                    local height = math.abs(headPos.Y - feetPos.Y)
+                    local width = height * 0.6
+                    
+                    local topLeft = Vector2.new(rootPos.X - width/2, headPos.Y)
+                    local topRight = Vector2.new(rootPos.X + width/2, headPos.Y)
+                    local bottomLeft = Vector2.new(rootPos.X - width/2, feetPos.Y)
+                    local bottomRight = Vector2.new(rootPos.X + width/2, feetPos.Y)
                     
                     esp.BoxLines.Top.From = topLeft
                     esp.BoxLines.Top.To = topRight
@@ -1027,7 +917,12 @@ function Visuals.Init(UI, Core, notify)
                     esp.BoxLines.Left.To = bottomLeft
                     esp.BoxLines.Right.From = topRight
                     esp.BoxLines.Right.To = bottomRight
-
+                    
+                    for _, line in pairs(esp.BoxLines) do
+                        line.Color = color
+                        line.Visible = true
+                    end
+                    
                     if ESP.Settings.BoxSettings.FilledEnabled.Value then
                         if supportsQuad then
                             esp.Filled.PointA = topLeft
@@ -1039,47 +934,30 @@ function Visuals.Init(UI, Core, notify)
                             esp.Filled.Size = Vector2.new(bottomRight.X - topLeft.X, bottomRight.Y - topLeft.Y)
                         end
                         esp.Filled.Color = color
-                        esp.Filled.Transparency = 1 - ESP.Settings.BoxSettings.FilledTransparency.Value
                         esp.Filled.Visible = true
                     else
                         esp.Filled.Visible = false
                     end
-                    
-                    -- Скрываем 3D линии
-                    for _, line in pairs(esp.Box3DLines or {}) do line.Visible = false end
                 else
                     for _, line in pairs(esp.BoxLines) do line.Visible = false end
-                    for _, line in pairs(esp.Box3DLines or {}) do line.Visible = false end
                     esp.Filled.Visible = false
                 end
             end
 
             if ESP.Settings.BoxSettings.ShowNames.Value then
-                local t = ESP.Settings.BoxSettings.GradientEnabled.Value and (math.sin(currentTime * ESP.Settings.BoxSettings.GradientSpeed.Value * 0.5) + 1) / 2 or 0
-                local nameColor = ESP.Settings.BoxSettings.GradientEnabled.Value and gradColor1:Lerp(gradColor2, t) or baseColor
-                local nameY
-                
-                if ESP.Settings.ESPMode.Value == "3D" then
-                    nameY = rootPos.Y - 30
-                else
-                    local width, height = getStableBoxSize(player, character, camera)
-                    nameY = rootPos.Y - height/2 - 20
-                end
+                local nameColor = ESP.Settings.BoxSettings.GradientEnabled.Value and color or baseColor
+                local nameY = rootPos.Y - 30
                 
                 if ESP.Settings.TextSettings.TextMethod.Value == "Drawing" then
                     esp.NameDrawing.Text = player.Name
                     esp.NameDrawing.Position = Vector2.new(rootPos.X, nameY)
                     esp.NameDrawing.Color = nameColor
-                    esp.NameDrawing.Size = ESP.Settings.TextSettings.TextSize.Value
-                    esp.NameDrawing.Font = ESP.Settings.TextSettings.TextFont.Value
                     esp.NameDrawing.Visible = true
                     if esp.NameGui then esp.NameGui.Visible = false end
                 elseif ESP.Settings.TextSettings.TextMethod.Value == "GUI" and esp.NameGui then
                     esp.NameGui.Text = player.Name
                     esp.NameGui.Position = UDim2.new(0, rootPos.X - 100, 0, nameY)
                     esp.NameGui.TextColor3 = nameColor
-                    esp.NameGui.TextSize = ESP.Settings.TextSettings.TextSize.Value
-                    esp.NameGui.Font = Enum.Font.Gotham
                     esp.NameGui.Visible = true
                     esp.NameDrawing.Visible = false
                 end
@@ -1090,6 +968,7 @@ function Visuals.Init(UI, Core, notify)
         end
     end
 
+    -- Инициализация ESP
     task.wait(1)
     for _, player in pairs(Core.Services.Players:GetPlayers()) do
         if player ~= Core.PlayerData.LocalPlayer then createESP(player) end
@@ -1100,9 +979,18 @@ function Visuals.Init(UI, Core, notify)
     end)
 
     Core.Services.Players.PlayerRemoving:Connect(removeESP)
-    Core.Services.RunService.RenderStepped:Connect(updateESP)
+    
+    -- Запускаем ESP с фиксированным FPS
+    local function runESP()
+        while true do
+            updateESP()
+            task.wait(ESP.UpdateInterval)
+        end
+    end
+    
+    task.spawn(runESP)
 
-    -- UI Configuration (переработанная)
+    -- UI Configuration
     if UI.Tabs and UI.Tabs.Visuals then
         -- Меню Button Section
         if UI.Sections and UI.Sections.MenuButton then
@@ -1195,13 +1083,13 @@ function Visuals.Init(UI, Core, notify)
             }, 'ShowTime')
         end
 
-        -- ESP Section (переработанная)
+        -- ESP Section
         if UI.Sections and UI.Sections.ESP then
-            -- MAIN SETTINGS SECTION
-            UI.Sections.ESP:Header({ Name = "ESP - Main Settings" })
+            -- MAIN SETTINGS
+            UI.Sections.ESP:Header({ Name = "ESP Settings" })
             
             UI.Sections.ESP:Toggle({
-                Name = "ESP Enabled",
+                Name = "Enabled",
                 Default = ESP.Settings.Enabled.Default,
                 Callback = function(value)
                     ESP.Settings.Enabled.Value = value
@@ -1227,8 +1115,8 @@ function Visuals.Init(UI, Core, notify)
             
             UI.Sections.ESP:Divider()
             
-            -- COLOR SETTINGS SECTION
-            UI.Sections.ESP:Header({ Name = "Color Settings" })
+            -- COLOR SETTINGS
+            UI.Sections.ESP:Header({ Name = "Colors" })
             
             UI.Sections.ESP:Colorpicker({
                 Name = "Enemy Color",
@@ -1268,7 +1156,7 @@ function Visuals.Init(UI, Core, notify)
             
             UI.Sections.ESP:Divider()
             
-            -- BOX SETTINGS SECTION
+            -- BOX SETTINGS
             UI.Sections.ESP:Header({ Name = "Box Settings" })
             
             UI.Sections.ESP:Toggle({
@@ -1284,7 +1172,7 @@ function Visuals.Init(UI, Core, notify)
             }, 'ShowBox')
             
             UI.Sections.ESP:Slider({
-                Name = "Box Thickness",
+                Name = "Thickness",
                 Minimum = 1,
                 Maximum = 5,
                 Default = ESP.Settings.BoxSettings.Thickness.Default,
@@ -1293,17 +1181,17 @@ function Visuals.Init(UI, Core, notify)
                     ESP.Settings.BoxSettings.Thickness.Value = value
                     for _, esp in pairs(ESP.Elements) do
                         for _, line in pairs(esp.BoxLines) do line.Thickness = value end
-                        for _, line in pairs(esp.Box3DLines or {}) do line.Thickness = value end
+                        for _, line in pairs(esp.Box3DLines) do line.Thickness = value end
                     end
                     if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
                         ESP.LastNotificationTime = tick()
-                        notify("ESP", "Box Thickness set to: " .. value)
+                        notify("ESP", "Thickness set to: " .. value)
                     end
                 end
             }, 'ThicknessESP')
             
             UI.Sections.ESP:Slider({
-                Name = "Box Transparency",
+                Name = "Transparency",
                 Minimum = 0,
                 Maximum = 1,
                 Default = ESP.Settings.BoxSettings.Transparency.Default,
@@ -1312,11 +1200,12 @@ function Visuals.Init(UI, Core, notify)
                     ESP.Settings.BoxSettings.Transparency.Value = value
                     for _, esp in pairs(ESP.Elements) do
                         for _, line in pairs(esp.BoxLines) do line.Transparency = 1 - value end
-                        for _, line in pairs(esp.Box3DLines or {}) do line.Transparency = 1 - value end
+                        for _, line in pairs(esp.Box3DLines) do line.Transparency = 1 - value end
+                        esp.Filled.Transparency = 1 - ESP.Settings.BoxSettings.FilledTransparency.Value
                     end
                     if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
                         ESP.LastNotificationTime = tick()
-                        notify("ESP", "Box Transparency set to: " .. value)
+                        notify("ESP", "Transparency set to: " .. value)
                     end
                 end
             }, 'TransparencyESP')
@@ -1352,13 +1241,13 @@ function Visuals.Init(UI, Core, notify)
             }, 'FilledTransparency')
             
             UI.Sections.ESP:Toggle({
-                Name = "Gradient Effect",
+                Name = "Gradient",
                 Default = ESP.Settings.BoxSettings.GradientEnabled.Default,
                 Callback = function(value)
                     ESP.Settings.BoxSettings.GradientEnabled.Value = value
                     if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
                         ESP.LastNotificationTime = tick()
-                        notify("ESP", "Gradient Effect " .. (value and "Enabled" or "Disabled"), true)
+                        notify("ESP", "Gradient " .. (value and "Enabled" or "Disabled"), true)
                     end
                 end
             }, 'GradientEnabledESP')
@@ -1380,7 +1269,7 @@ function Visuals.Init(UI, Core, notify)
             
             UI.Sections.ESP:Divider()
             
-            -- TEXT SETTINGS SECTION
+            -- TEXT SETTINGS
             UI.Sections.ESP:Header({ Name = "Text Settings" })
             
             UI.Sections.ESP:Toggle({
@@ -1434,7 +1323,7 @@ function Visuals.Init(UI, Core, notify)
             }, 'TextMethod')
             
             UI.Sections.ESP:Dropdown({
-                Name = "Text Font",
+                Name = "Font",
                 Options = {"UI", "System", "Plex", "Monospace"},
                 Default = "Plex",
                 Callback = function(value)
@@ -1450,45 +1339,10 @@ function Visuals.Init(UI, Core, notify)
                     end
                     if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
                         ESP.LastNotificationTime = tick()
-                        notify("ESP", "Text Font set to: " .. value, true)
+                        notify("ESP", "Font set to: " .. value, true)
                     end
                 end
             }, 'TextFont')
-            
-            UI.Sections.ESP:Divider()
-            
-            -- FILTER SETTINGS SECTION
-            UI.Sections.ESP:Header({ Name = "Filter Settings" })
-            
-            UI.Sections.ESP:Slider({
-                Name = "Max Distance",
-                Minimum = 100,
-                Maximum = 1000,
-                Default = ESP.Settings.PlayerFilter.MaxDistance.Default,
-                Precision = 0,
-                Callback = function(value)
-                    ESP.Settings.PlayerFilter.MaxDistance.Value = value
-                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
-                        ESP.LastNotificationTime = tick()
-                        notify("ESP", "Max Distance set to: " .. value)
-                    end
-                end
-            }, 'MaxDistanceESP')
-            
-            UI.Sections.ESP:Slider({
-                Name = "Minimum FOV",
-                Minimum = 10,
-                Maximum = 100,
-                Default = ESP.Settings.PlayerFilter.MinFOV.Default,
-                Precision = 0,
-                Callback = function(value)
-                    ESP.Settings.PlayerFilter.MinFOV.Value = value
-                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
-                        ESP.LastNotificationTime = tick()
-                        notify("ESP", "Minimum FOV set to: " .. value .. "%")
-                    end
-                end
-            }, 'MinFOVESP')
         end
     end
 end
