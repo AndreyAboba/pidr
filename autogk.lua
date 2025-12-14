@@ -1,5 +1,5 @@
--- GK Helper v47 — Advanced Defense Module
--- Improved version with smart attack prediction and fixed dive bug
+-- GK Helper v48 — Advanced Defense Module with Color Customization
+-- Improved version with smart attack prediction, fixed dive bug, and color customization
 
 local player = game.Players.LocalPlayer
 local ws = workspace
@@ -9,7 +9,7 @@ local ts = game:GetService("TweenService")
 local tweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- V47 ADVANCED DEFENSE - CONFIGURATION
+-- V48 ADVANCED DEFENSE - CONFIGURATION
 local CONFIG = {
     -- === BASIC SETTINGS ===
     ENABLED = false,
@@ -56,6 +56,17 @@ local CONFIG = {
     SHOW_ZONE = true,               -- Show defense zone (green cube)
     SHOW_BALL_BOX = true,           -- Show ball cube
     SHOW_ATTACK_TARGET = true,      -- Show attack target prediction
+    
+    -- === VISUAL COLORS ===
+    TRAJECTORY_COLOR = Color3.fromRGB(0, 255, 255),    -- Cyan
+    ENDPOINT_COLOR = Color3.fromRGB(255, 255, 0),      -- Yellow
+    GOAL_CUBE_COLOR = Color3.fromRGB(255, 0, 0),       -- Red
+    ZONE_COLOR = Color3.fromRGB(0, 255, 0),           -- Green
+    BALL_BOX_SAFE_COLOR = Color3.fromRGB(0, 255, 0),  -- Green (safe)
+    BALL_BOX_THREAT_COLOR = Color3.fromRGB(255, 0, 0),-- Red (threat)
+    BALL_BOX_HIGH_COLOR = Color3.fromRGB(255, 255, 0),-- Yellow (high)
+    BALL_BOX_NORMAL_COLOR = Color3.fromRGB(0, 200, 255), -- Light blue (normal)
+    ATTACK_TARGET_COLOR = Color3.fromRGB(255, 105, 180), -- Pink
     
     -- === ROTATION ===
     ROT_SMOOTH = 0.79,              -- Rotation smoothness (0-1, higher = smoother)
@@ -108,8 +119,8 @@ local moduleState = {
     attackTargetHistory = {},
     predictedEnemyPositions = {},
     currentAttackTarget = nil,
-    lastAttackTargetUpdate = 0,
-    attackTargetVisible = false
+    attackTargetVisible = false,
+    colorPickers = {}
 }
 
 -- Global variables
@@ -137,6 +148,7 @@ local function createVisuals()
             line.Thickness = 4 
             line.Transparency = 0.5
             line.Visible = false
+            line.Color = CONFIG.GOAL_CUBE_COLOR
             moduleState.visualObjects.GoalCube[i] = line
         end
     end
@@ -148,6 +160,7 @@ local function createVisuals()
             line.Thickness = 4 
             line.Transparency = 0.5
             line.Visible = false
+            line.Color = CONFIG.ZONE_COLOR
             moduleState.visualObjects.LimitCube[i] = line
         end
     end
@@ -168,7 +181,7 @@ local function createVisuals()
         for i = 1, CONFIG.PRED_STEPS do
             local line = Drawing.new("Line")
             line.Thickness = 2.5 
-            line.Color = Color3.fromHSV(i / CONFIG.PRED_STEPS, 1, 1) 
+            line.Color = Color3.fromHSV(i / CONFIG.PRED_STEPS, 1, 1) -- Градиентный цвет
             line.Transparency = 0.45
             line.Visible = false
             moduleState.visualObjects.trajLines[i] = line
@@ -180,7 +193,7 @@ local function createVisuals()
         for i = 1, 24 do
             local line = Drawing.new("Line")
             line.Thickness = 3 
-            line.Color = Color3.new(1,1,0) 
+            line.Color = CONFIG.ENDPOINT_COLOR
             line.Transparency = 0.5
             line.Visible = false
             moduleState.visualObjects.endpointLines[i] = line
@@ -193,10 +206,61 @@ local function createVisuals()
         for i = 1, 36 do -- Increased from 24 to 36 for smoother circle
             local line = Drawing.new("Line")
             line.Thickness = 3 
-            line.Color = Color3.fromRGB(255, 105, 180) -- Pink color for attack target
+            line.Color = CONFIG.ATTACK_TARGET_COLOR
             line.Transparency = 0.7
             line.Visible = false
             moduleState.visualObjects.attackTarget[i] = line
+        end
+    end
+end
+
+-- Update all visual colors
+local function updateVisualColors()
+    -- Update Goal Cube color
+    if moduleState.visualObjects.GoalCube then
+        for _, line in ipairs(moduleState.visualObjects.GoalCube) do
+            if line then
+                line.Color = CONFIG.GOAL_CUBE_COLOR
+            end
+        end
+    end
+    
+    -- Update Zone color
+    if moduleState.visualObjects.LimitCube then
+        for _, line in ipairs(moduleState.visualObjects.LimitCube) do
+            if line then
+                line.Color = CONFIG.ZONE_COLOR
+            end
+        end
+    end
+    
+    -- Update Endpoint color
+    if moduleState.visualObjects.endpointLines then
+        for _, line in ipairs(moduleState.visualObjects.endpointLines) do
+            if line then
+                line.Color = CONFIG.ENDPOINT_COLOR
+            end
+        end
+    end
+    
+    -- Update Attack Target color
+    if moduleState.visualObjects.attackTarget then
+        for _, line in ipairs(moduleState.visualObjects.attackTarget) do
+            if line then
+                line.Color = CONFIG.ATTACK_TARGET_COLOR
+            end
+        end
+    end
+    
+    -- Update Trajectory color (gradient based on CONFIG.TRAJECTORY_COLOR)
+    if moduleState.visualObjects.trajLines then
+        local baseH, baseS, baseV = CONFIG.TRAJECTORY_COLOR:ToHSV()
+        for i, line in ipairs(moduleState.visualObjects.trajLines) do
+            if line then
+                -- Create gradient based on base color
+                local hue = (baseH + (i / CONFIG.PRED_STEPS) * 0.3) % 1
+                line.Color = Color3.fromHSV(hue, baseS, baseV)
+            end
         end
     end
 end
@@ -359,7 +423,7 @@ local function drawCube(cube, cf, size, color)
         if l then
             l.From = Vector2.new(sa.X, sa.Y) 
             l.To = Vector2.new(sb.X, sb.Y) 
-            l.Color = color or Color3.new(1,1,1)
+            l.Color = color or l.Color or Color3.new(1,1,1)
             l.Visible = sa.Z > 0 and sb.Z > 0
         end
     end
@@ -377,7 +441,7 @@ local function drawFlatZone()
     
     local center = GoalCFrame.Position + GoalForward * (CONFIG.ZONE_DIST / 2)
     local flatCF = CFrame.new(center.X, 0, center.Z) * GoalCFrame.Rotation
-    drawCube(moduleState.visualObjects.LimitCube, flatCF, Vector3.new(GoalWidth * CONFIG.ZONE_WIDTH, 0.2, CONFIG.ZONE_DIST), Color3.fromRGB(0, 255, 0))
+    drawCube(moduleState.visualObjects.LimitCube, flatCF, Vector3.new(GoalWidth * CONFIG.ZONE_WIDTH, 0.2, CONFIG.ZONE_DIST), CONFIG.ZONE_COLOR)
 end
 
 local function drawEndpoint(pos)
@@ -448,7 +512,7 @@ local function drawAttackTarget(pos)
     moduleState.attackTargetVisible = true
 end
 
--- Function to hide attack target
+-- Function to hide attack target immediately
 local function hideAttackTarget()
     if moduleState.visualObjects.attackTarget then
         for _, l in moduleState.visualObjects.attackTarget do 
@@ -456,6 +520,7 @@ local function hideAttackTarget()
         end
     end
     moduleState.attackTargetVisible = false
+    moduleState.currentAttackTarget = nil
 end
 
 local function predictTrajectory(ball)
@@ -788,7 +853,6 @@ local function smartBlockEnemyView(root, targetPlayer, ball)
     
     -- Update attack target
     moduleState.currentAttackTarget = targetPlayer
-    moduleState.lastAttackTargetUpdate = tick()
     
     -- Predict enemy position with server lag compensation
     local predictedEnemyPos = predictEnemyPosition(targetRoot)
@@ -1033,7 +1097,7 @@ local function startHeartbeat()
 
         -- Draw visuals
         if CONFIG.SHOW_GOAL_CUBE and moduleState.visualObjects.GoalCube then
-            drawCube(moduleState.visualObjects.GoalCube, GoalCFrame, Vector3.new(GoalWidth, 8, 2), Color3.fromRGB(255, 0, 0))
+            drawCube(moduleState.visualObjects.GoalCube, GoalCFrame, Vector3.new(GoalWidth, 8, 2), CONFIG.GOAL_CUBE_COLOR)
         end
         
         if CONFIG.SHOW_ZONE then 
@@ -1093,6 +1157,9 @@ local function startHeartbeat()
                     if CONFIG.SHOW_ATTACK_TARGET then
                         drawAttackTarget(predictedEnemyPos)
                     end
+                elseif not isAggro and moduleState.currentAttackTarget == owner then
+                    -- If enemy is no longer a threat, hide target immediately
+                    hideAttackTarget()
                 end
             end
         end
@@ -1108,13 +1175,15 @@ local function startHeartbeat()
             if CONFIG.SHOW_ATTACK_TARGET then
                 drawAttackTarget(predictedPos)
             end
+        elseif CONFIG.AGGRESSIVE_MODE and not owner and moduleState.currentAttackTarget then
+            -- If aggressive mode but no enemy with ball, hide target
+            hideAttackTarget()
         end
 
-        -- If no attack target for 0.5 seconds, hide attack target visuals
+        -- Hide attack target if no active target
         if not attackTargetPlayer and not isAggro and not CONFIG.AGGRESSIVE_MODE then
-            if moduleState.currentAttackTarget and tick() - moduleState.lastAttackTargetUpdate > 0.5 then
+            if moduleState.currentAttackTarget then
                 hideAttackTarget()
-                moduleState.currentAttackTarget = nil
             end
         end
 
@@ -1174,7 +1243,18 @@ local function startHeartbeat()
 
         -- Draw ball box (always render every frame)
         if CONFIG.SHOW_BALL_BOX and distBall < 70 and moduleState.visualObjects.BallBox then 
-            local col = endpoint and (isThreat and Color3.fromRGB(255,0,0) or (endpoint.Y > CONFIG.JUMP_THRES and Color3.fromRGB(255,255,0)) or Color3.fromRGB(0,200,255)) or Color3.fromRGB(0,255,0)
+            local col
+            if endpoint then
+                if isThreat then
+                    col = CONFIG.BALL_BOX_THREAT_COLOR
+                elseif endpoint.Y > CONFIG.JUMP_THRES then
+                    col = CONFIG.BALL_BOX_HIGH_COLOR
+                else
+                    col = CONFIG.BALL_BOX_NORMAL_COLOR
+                end
+            else
+                col = CONFIG.BALL_BOX_SAFE_COLOR
+            end
             drawCube(moduleState.visualObjects.BallBox, CFrame.new(ball.Position), Vector3.new(3.5, 3.5, 3.5), col)
         elseif moduleState.visualObjects.BallBox then 
             drawCube(moduleState.visualObjects.BallBox, nil) 
@@ -1331,6 +1411,20 @@ local function syncConfig()
     CONFIG.SHOW_BALL_BOX = moduleState.uiElements.ShowBallBox and moduleState.uiElements.ShowBallBox:GetState()
     CONFIG.SHOW_ATTACK_TARGET = moduleState.uiElements.ShowAttackTarget and moduleState.uiElements.ShowAttackTarget:GetState()
     
+    -- Update colors
+    CONFIG.TRAJECTORY_COLOR = moduleState.colorPickers.TrajectoryColor and moduleState.colorPickers.TrajectoryColor:GetValue() or CONFIG.TRAJECTORY_COLOR
+    CONFIG.ENDPOINT_COLOR = moduleState.colorPickers.EndpointColor and moduleState.colorPickers.EndpointColor:GetValue() or CONFIG.ENDPOINT_COLOR
+    CONFIG.GOAL_CUBE_COLOR = moduleState.colorPickers.GoalCubeColor and moduleState.colorPickers.GoalCubeColor:GetValue() or CONFIG.GOAL_CUBE_COLOR
+    CONFIG.ZONE_COLOR = moduleState.colorPickers.ZoneColor and moduleState.colorPickers.ZoneColor:GetValue() or CONFIG.ZONE_COLOR
+    CONFIG.BALL_BOX_SAFE_COLOR = moduleState.colorPickers.BallBoxSafeColor and moduleState.colorPickers.BallBoxSafeColor:GetValue() or CONFIG.BALL_BOX_SAFE_COLOR
+    CONFIG.BALL_BOX_THREAT_COLOR = moduleState.colorPickers.BallBoxThreatColor and moduleState.colorPickers.BallBoxThreatColor:GetValue() or CONFIG.BALL_BOX_THREAT_COLOR
+    CONFIG.BALL_BOX_HIGH_COLOR = moduleState.colorPickers.BallBoxHighColor and moduleState.colorPickers.BallBoxHighColor:GetValue() or CONFIG.BALL_BOX_HIGH_COLOR
+    CONFIG.BALL_BOX_NORMAL_COLOR = moduleState.colorPickers.BallBoxNormalColor and moduleState.colorPickers.BallBoxNormalColor:GetValue() or CONFIG.BALL_BOX_NORMAL_COLOR
+    CONFIG.ATTACK_TARGET_COLOR = moduleState.colorPickers.AttackTargetColor and moduleState.colorPickers.AttackTargetColor:GetValue() or CONFIG.ATTACK_TARGET_COLOR
+    
+    -- Update visual colors
+    updateVisualColors()
+    
     -- Update module state
     moduleState.enabled = CONFIG.ENABLED
     
@@ -1341,6 +1435,7 @@ local function syncConfig()
             moduleState.heartbeatConnection = nil
         end
         createVisuals()
+        updateVisualColors()
         startHeartbeat()
         if moduleState.notify then
             moduleState.notify("AutoGK", "Enabled with synced config", true)
@@ -1384,6 +1479,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
                 moduleState.enabled = v
                 if v then
                     createVisuals()
+                    updateVisualColors()
                     startHeartbeat()
                     notify("AutoGK", "Enabled", true)
                 else
@@ -1463,16 +1559,16 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
         moduleState.uiElements.DiveSpeed = UI.Sections.AutoGoalKeeper:Slider({
             Name = "Dive Speed",
             Minimum = 20,
-            Maximum = 30,
+            Maximum = 60,
             Default = CONFIG.DIVE_SPEED,
             Precision = 1,
             Callback = function(v) CONFIG.DIVE_SPEED = v end
         }, 'DiveSpeedGK')
         
         moduleState.uiElements.DiveVelThresh = UI.Sections.AutoGoalKeeper:Slider({
-            Name = "Dive Velocity",
+            Name = "Dive Velocity Threshold",
             Minimum = 10,
-            Maximum = 20,
+            Maximum = 40,
             Default = CONFIG.DIVE_VEL_THRES,
             Precision = 1,
             Callback = function(v) CONFIG.DIVE_VEL_THRES = v end
@@ -1491,7 +1587,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
         
         -- Jump Settings
         moduleState.uiElements.JumpVelThresh = UI.Sections.AutoGoalKeeper:Slider({
-            Name = "Jump Velocity",
+            Name = "Jump Velocity Threshold",
             Minimum = 20,
             Maximum = 50,
             Default = CONFIG.JUMP_VEL_THRES,
@@ -1550,7 +1646,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
         }, 'AGGROTHRESGK')
         
         moduleState.uiElements.MaxChaseDist = UI.Sections.AutoGoalKeeper:Slider({
-            Name = "Max Chase Dist",
+            Name = "Max Chase Distance",
             Minimum = 20,
             Maximum = 80,
             Default = CONFIG.MAX_CHASE_DIST,
@@ -1568,7 +1664,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
         }, 'GOALCOVERAGEGK')
         
         moduleState.uiElements.LateralMaxMult = UI.Sections.AutoGoalKeeper:Slider({
-            Name = "Lateral Movement",
+            Name = "Lateral Movement Multiplier",
             Minimum = 0.2,
             Maximum = 0.8,
             Default = CONFIG.LATERAL_MAX_MULT,
@@ -1743,6 +1839,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
                 CONFIG.SHOW_TRAJECTORY = v 
                 if moduleState.enabled then
                     createVisuals()
+                    updateVisualColors()
                 end
             end
         }, 'SHOWTRAJECTORYGK')
@@ -1754,6 +1851,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
                 CONFIG.SHOW_ENDPOINT = v 
                 if moduleState.enabled then
                     createVisuals()
+                    updateVisualColors()
                 end
             end
         }, 'SHOWENDPOINTGK')
@@ -1765,6 +1863,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
                 CONFIG.SHOW_GOAL_CUBE = v 
                 if moduleState.enabled then
                     createVisuals()
+                    updateVisualColors()
                 end
             end
         }, 'SHOWGOALCUBEGK')
@@ -1776,6 +1875,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
                 CONFIG.SHOW_ZONE = v 
                 if moduleState.enabled then
                     createVisuals()
+                    updateVisualColors()
                 end
             end
         })
@@ -1787,6 +1887,7 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
                 CONFIG.SHOW_BALL_BOX = v 
                 if moduleState.enabled then
                     createVisuals()
+                    updateVisualColors()
                 end
             end
         }, 'SHOWBALLBOXGK')
@@ -1798,9 +1899,92 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
                 CONFIG.SHOW_ATTACK_TARGET = v 
                 if moduleState.enabled then
                     createVisuals()
+                    updateVisualColors()
                 end
             end
         }, 'SHOWATTACKTARGETGK')
+        
+        UI.Sections.AutoGoalKeeper:Divider()
+        
+        -- COLOR SETTINGS SECTION
+        UI.Sections.AutoGoalKeeper:Header({ Name = "Color Settings" })
+        
+        moduleState.colorPickers.TrajectoryColor = UI.Sections.AutoGoalKeeper:Colorpicker({
+            Name = "Trajectory Color",
+            Default = CONFIG.TRAJECTORY_COLOR,
+            Callback = function(v) 
+                CONFIG.TRAJECTORY_COLOR = v
+                updateVisualColors()
+            end
+        }, 'TRAJECTORYCOLORGK')
+        
+        moduleState.colorPickers.EndpointColor = UI.Sections.AutoGoalKeeper:Colorpicker({
+            Name = "Endpoint Color",
+            Default = CONFIG.ENDPOINT_COLOR,
+            Callback = function(v) 
+                CONFIG.ENDPOINT_COLOR = v
+                updateVisualColors()
+            end
+        }, 'ENDPOINTCOLORGK')
+        
+        moduleState.colorPickers.GoalCubeColor = UI.Sections.AutoGoalKeeper:Colorpicker({
+            Name = "Goal Cube Color",
+            Default = CONFIG.GOAL_CUBE_COLOR,
+            Callback = function(v) 
+                CONFIG.GOAL_CUBE_COLOR = v
+                updateVisualColors()
+            end
+        }, 'GOALCUBECOLORGK')
+        
+        moduleState.colorPickers.ZoneColor = UI.Sections.AutoGoalKeeper:Colorpicker({
+            Name = "Zone Color",
+            Default = CONFIG.ZONE_COLOR,
+            Callback = function(v) 
+                CONFIG.ZONE_COLOR = v
+                updateVisualColors()
+            end
+        }, 'ZONECOLORGK')
+        
+        moduleState.colorPickers.AttackTargetColor = UI.Sections.AutoGoalKeeper:Colorpicker({
+            Name = "Attack Target Color",
+            Default = CONFIG.ATTACK_TARGET_COLOR,
+            Callback = function(v) 
+                CONFIG.ATTACK_TARGET_COLOR = v
+                updateVisualColors()
+            end
+        }, 'ATTACKTARGETCOLORGK')
+        
+        moduleState.colorPickers.BallBoxSafeColor = UI.Sections.AutoGoalKeeper:Colorpicker({
+            Name = "Ball Box Safe Color",
+            Default = CONFIG.BALL_BOX_SAFE_COLOR,
+            Callback = function(v) 
+                CONFIG.BALL_BOX_SAFE_COLOR = v
+            end
+        }, 'BALLBOXSAFECOLORGK')
+        
+        moduleState.colorPickers.BallBoxThreatColor = UI.Sections.AutoGoalKeeper:Colorpicker({
+            Name = "Ball Box Threat Color",
+            Default = CONFIG.BALL_BOX_THREAT_COLOR,
+            Callback = function(v) 
+                CONFIG.BALL_BOX_THREAT_COLOR = v
+            end
+        }, 'BALLBOXTHREATCOLORGK')
+        
+        moduleState.colorPickers.BallBoxHighColor = UI.Sections.AutoGoalKeeper:Colorpicker({
+            Name = "Ball Box High Color",
+            Default = CONFIG.BALL_BOX_HIGH_COLOR,
+            Callback = function(v) 
+                CONFIG.BALL_BOX_HIGH_COLOR = v
+            end
+        }, 'BALLBOXHIGHCOLORGK')
+        
+        moduleState.colorPickers.BallBoxNormalColor = UI.Sections.AutoGoalKeeper:Colorpicker({
+            Name = "Ball Box Normal Color",
+            Default = CONFIG.BALL_BOX_NORMAL_COLOR,
+            Callback = function(v) 
+                CONFIG.BALL_BOX_NORMAL_COLOR = v
+            end
+        }, 'BALLBOXNORMALCOLORGK')
         
         UI.Sections.AutoGoalKeeper:Divider()
         
@@ -1808,36 +1992,8 @@ function GKHelperModule.Init(UI, coreParam, notifyFunc)
         UI.Sections.AutoGoalKeeper:Header({ Name = "Information" })
         
         UI.Sections.AutoGoalKeeper:Paragraph({
-            Header = "AutoGK V1.4 - Smart Attack & Fixed Dive",
+            Header = "AutoGK V1.5 - Color Customization & Improved",
             Body = [[
-IMPROVEMENTS IN V1.4:
-1. SMART ATTACK: Now predicts enemy movement and positions slightly ahead
-2. FIXED DIVE BUG: No more flying into space after diving
-3. SERVER LAG COMPENSATION: Attacks where enemy WILL be, not where they are
-4. IMPROVED VISUALS: Show predicted attack targets at foot level
-5. SMOOTH RENDERING: Attack target circle renders every frame
-6. PROPER CLEANUP: Attack target disappears when no enemy
-
-SMART ATTACK FEATURES:
-- Predicts enemy position based on velocity
-- Compensates for server lag (0.15s by default)
-- Positions goalkeeper ahead of enemy's path to goal
-- Better blocking of shooting angles
-- Smooth visual feedback at foot level
-
-DIVE FIXES:
-- Reduced vertical force to prevent flying
-- Added downward force after dive
-- Shorter dive duration
-- More stable rotation
-
-VISUAL IMPROVEMENTS:
-- Attack target at foot level (y=0.5)
-- 36 segments for smooth circle
-- Renders every frame (60+ FPS)
-- Properly disappears when no target
-- Pink color for easy identification
-
 BASIC SETTINGS:
 0 Movement Speed: How fast the goalkeeper moves
 1 Stand Distance: Default distance from goal when idle
@@ -1880,9 +2036,6 @@ ADVANCED DEFENSE:
 28 Advance Distance: How far to advance from goal
 29 Rotation Smoothness: Smoothness of turning
 30 Dive Look Ahead: How far ahead to look during dive
-
-VISUALS:
-31 Toggle various visual indicators on/off
 ]]
         })
     end
