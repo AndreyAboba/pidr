@@ -35,6 +35,17 @@ function Visuals.Init(UI, Core, notify)
         gradientUpdateInterval = 0.1
     }
 
+    -- Получаем анимации дриблинга из ReplicatedStorage
+    local Animations = game:GetService("ReplicatedStorage"):WaitForChild("Animations")
+    local DribbleAnims = Animations:WaitForChild("Dribble")
+    
+    local DribbleAnimationIds = {}
+    for _, anim in pairs(DribbleAnims:GetChildren()) do
+        if anim:IsA("Animation") then
+            table.insert(DribbleAnimationIds, anim.AnimationId)
+        end
+    end
+
     local ESP = {
         Settings = {
             Enabled = { Value = false, Default = false },
@@ -50,17 +61,21 @@ function Visuals.Init(UI, Core, notify)
                 ShowNames = { Value = true, Default = true },
                 ShowCountry = { Value = true, Default = true },
                 ShowDevice = { Value = true, Default = true },
-                ShowDribbleCD = { Value = true, Default = true }, -- Текст кулдауна дриблинга
-                ShowTackleCD = { Value = true, Default = true }, -- Текст кулдауна текла
-                ShowDribbleBar = { Value = true, Default = true }, -- Бар кулдауна дриблинга
-                ShowTackleBar = { Value = true, Default = true }, -- Бар кулдауна текла
+                ShowDribbleCD = { Value = true, Default = true },
+                ShowTackleCD = { Value = true, Default = true },
+                ShowDribbleBar = { Value = true, Default = true },
+                ShowTackleBar = { Value = true, Default = true },
                 DribbleBarColor = { Value = Color3.fromRGB(255, 165, 0), Default = Color3.fromRGB(255, 165, 0) },
                 TackleBarColor = { Value = Color3.fromRGB(255, 50, 50), Default = Color3.fromRGB(255, 50, 50) },
-                ReadyColor = { Value = Color3.fromRGB(0, 255, 0), Default = Color3.fromRGB(0, 255, 0) }, -- Цвет "Ready"
+                ReadyColor = { Value = Color3.fromRGB(0, 255, 0), Default = Color3.fromRGB(0, 255, 0) },
                 GradientEnabled = { Value = false, Default = false },
                 FilledEnabled = { Value = false, Default = false },
                 FilledTransparency = { Value = 0.5, Default = 0.5 },
-                GradientSpeed = { Value = 2, Default = 2 }
+                GradientSpeed = { Value = 2, Default = 2 },
+                TextOffset = { Value = 120, Default = 120 }, -- Добавлено: смещение текста
+                BarOffset = { Value = 20, Default = 20 }, -- Добавлено: смещение баров
+                BarWidth = { Value = 100, Default = 100 }, -- Добавлено: ширина баров
+                BarHeight = { Value = 6, Default = 6 } -- Добавлено: высота баров
             },
             TextSettings = {
                 TextSize = { Value = 14, Default = 14 },
@@ -76,24 +91,9 @@ function Visuals.Init(UI, Core, notify)
         UpdateInterval = 1 / 60,
         LastUpdateTime = 0,
         
-        -- Данные для игроков
-        PlayerData = {
-            -- Структура: [player] = { 
-            --   dribbleCD = 0, -- текущий кулдаун
-            --   tackleCD = 0, 
-            --   lastDribbleTime = 0, -- когда последний раз видели дриблинг
-            --   lastTackleTime = 0,
-            --   isDribbling = false,
-            --   isTackling = false,
-            --   lastUpdate = 0 
-            -- }
-        },
-        
-        -- Анимации для детекта
-        DribbleAnimationIds = {
-            "rbxassetid://", -- Здесь добавьте ID анимаций дриблинга из вашего скрипта
-        },
-        TackleAnimationId = "rbxassetid://14317040670" -- Из вашего скрипта
+        PlayerData = {},
+        DribbleAnimationIds = DribbleAnimationIds, -- Используем полученные ID
+        TackleAnimationId = "rbxassetid://14317040670"
     }
 
     local Cache = { 
@@ -105,11 +105,9 @@ function Visuals.Init(UI, Core, notify)
     
     local Elements = { Watermark = {} }
 
-    -- Получаем CoreGui и RobloxGui
     local CoreGui = game:GetService("CoreGui")
     local RobloxGui = CoreGui:WaitForChild("RobloxGui")
     
-    -- Ищем Base frame в RobloxGui
     local function findBaseFrame()
         for _, child in ipairs(RobloxGui:GetDescendants()) do
             if child:IsA("Frame") and child.Name == "Base" then
@@ -121,7 +119,6 @@ function Visuals.Init(UI, Core, notify)
 
     local baseFrame = findBaseFrame()
     
-    -- Функция для эмуляции нажатия RightControl
     local function emulateRightControl()
         pcall(function()
             local vim = game:GetService("VirtualInputManager")
@@ -131,7 +128,6 @@ function Visuals.Init(UI, Core, notify)
         end)
     end
     
-    -- Функция для показа/скрытия меню
     local function toggleMenuVisibility()
         if State.MenuButton.Mobile then
             if baseFrame then
@@ -158,7 +154,6 @@ function Visuals.Init(UI, Core, notify)
         end
     end
 
-    -- Создаем кнопку меню
     local buttonGui = Instance.new("ScreenGui")
     buttonGui.Name = "MenuToggleButtonGui"
     buttonGui.Parent = RobloxGui
@@ -184,7 +179,6 @@ function Visuals.Init(UI, Core, notify)
     buttonIcon.Image = "rbxassetid://73279554401260"
     buttonIcon.Parent = buttonFrame
 
-    -- Функции для разных дизайнов кнопки
     local function applyDefaultDesign()
         local currentPos = buttonFrame.Position
         
@@ -321,7 +315,6 @@ function Visuals.Init(UI, Core, notify)
         State.MenuButton.DefaultV2Connection = connection
     end
 
-    -- Применяем текущий дизайн
     local function applyDesign(designName)
         if State.MenuButton.DefaultV2Connection then
             State.MenuButton.DefaultV2Connection:Disconnect()
@@ -339,7 +332,6 @@ function Visuals.Init(UI, Core, notify)
 
     applyDesign("Default")
 
-    -- Обработка нажатия на кнопку
     buttonFrame.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             State.MenuButton.TouchStartTime = tick()
@@ -692,7 +684,6 @@ function Visuals.Init(UI, Core, notify)
         test:Remove()
     end)
 
-    -- Функция для проверки команды
     local function getPlayerTeam(player)
         if player and player.Team then
             return player.Team
@@ -700,7 +691,6 @@ function Visuals.Init(UI, Core, notify)
         return nil
     end
 
-    -- Функция для проверки совпадения команд
     local function isSameTeam(player1, player2)
         local team1 = getPlayerTeam(player1)
         local team2 = getPlayerTeam(player2)
@@ -711,7 +701,6 @@ function Visuals.Init(UI, Core, notify)
         return false
     end
 
-    -- Функция для получения страны игрока
     local function getPlayerCountry(player)
         if player and player:FindFirstChild("OriginalCountry") then
             local countryData = player.OriginalCountry.Value
@@ -722,7 +711,6 @@ function Visuals.Init(UI, Core, notify)
         return "🌐"
     end
 
-    -- Функция для получения устройства игрока
     local function getPlayerDevice(player)
         if player.isMobile and player.isMobile.Value then
             return "📱"
@@ -738,7 +726,7 @@ function Visuals.Init(UI, Core, notify)
         end
     end
 
-    -- Функция для проверки анимации дриблинга
+    -- УЛУЧШЕННАЯ функция для проверки анимации дриблинга
     local function isPlayerDribbling(player)
         if not player or not player.Character then return false end
         
@@ -750,15 +738,26 @@ function Visuals.Init(UI, Core, notify)
         
         -- Проверяем все воспроизводимые анимации
         for _, track in pairs(animator:GetPlayingAnimationTracks()) do
-            if track.Animation then
+            if track.Animation and track.IsPlaying then
                 local animId = track.Animation.AnimationId
-                -- Здесь нужно добавить ID анимаций дриблинга из вашего скрипта
-                if track.IsPlaying and track.Length > 0 then
-                    -- Проверяем по имени трека (может содержать "Dribble")
-                    if string.find(string.lower(track.Name), "dribble") or 
-                       string.find(string.lower(animId), "dribble") then
+                
+                -- Проверяем по ID анимаций из DribbleAnims
+                for _, dribbleAnimId in ipairs(ESP.DribbleAnimationIds) do
+                    if animId == dribbleAnimId then
                         return true
                     end
+                end
+                
+                -- Также проверяем по имени трека
+                local trackNameLower = string.lower(track.Name)
+                if string.find(trackNameLower, "dribble") then
+                    return true
+                end
+                
+                -- Проверяем по имени анимации в AnimationId
+                local animIdLower = string.lower(animId)
+                if string.find(animIdLower, "dribble") then
+                    return true
                 end
             end
         end
@@ -766,7 +765,7 @@ function Visuals.Init(UI, Core, notify)
         return false
     end
 
-    -- Функция для проверки анимации текла
+    -- УЛУЧШЕННАЯ функция для проверки анимации текла
     local function isPlayerTackling(player)
         if not player or not player.Character then return false end
         
@@ -778,15 +777,20 @@ function Visuals.Init(UI, Core, notify)
         
         -- Проверяем все воспроизводимые анимации
         for _, track in pairs(animator:GetPlayingAnimationTracks()) do
-            if track.Animation then
+            if track.Animation and track.IsPlaying then
                 local animId = track.Animation.AnimationId
-                -- Проверяем конкретный ID текла из вашего скрипта
+                
+                -- Проверяем конкретный ID текла
                 if animId == ESP.TackleAnimationId then
                     return true
                 end
+                
                 -- Также проверяем по имени
-                if string.find(string.lower(track.Name), "tackle") or 
-                   string.find(string.lower(animId), "tackle") then
+                local trackNameLower = string.lower(track.Name)
+                local animIdLower = string.lower(animId)
+                
+                if string.find(trackNameLower, "tackle") or 
+                   string.find(animIdLower, "tackle") then
                     return true
                 end
             end
@@ -795,7 +799,6 @@ function Visuals.Init(UI, Core, notify)
         return false
     end
 
-    -- Функция для получения и обновления кулдаунов игрока
     local function getPlayerCooldowns(player)
         local currentTime = tick()
         local playerData = ESP.PlayerData[player]
@@ -813,7 +816,6 @@ function Visuals.Init(UI, Core, notify)
             ESP.PlayerData[player] = playerData
         end
         
-        -- Обновляем таймеры
         local deltaTime = currentTime - playerData.lastUpdate
         playerData.lastUpdate = currentTime
         
@@ -825,28 +827,24 @@ function Visuals.Init(UI, Core, notify)
             playerData.tackleCD = math.max(0, playerData.tackleCD - deltaTime)
         end
         
-        -- Проверяем состояния анимаций
+        -- Проверяем состояния анимаций с исправленным детектом
         local isDribblingNow = isPlayerDribbling(player)
         local isTacklingNow = isPlayerTackling(player)
         
         -- Обновляем кулдаун дриблинга
         if isDribblingNow and not playerData.isDribbling then
-            -- Начался дриблинг
             playerData.isDribbling = true
             playerData.lastDribbleTime = currentTime
         elseif not isDribblingNow and playerData.isDribbling then
-            -- Закончился дриблинг, устанавливаем кулдаун 3.5 секунды
             playerData.isDribbling = false
             playerData.dribbleCD = 3.5
         end
         
         -- Обновляем кулдаун текла
         if isTacklingNow and not playerData.isTackling then
-            -- Начался телк
             playerData.isTackling = true
             playerData.lastTackleTime = currentTime
         elseif not isTacklingNow and playerData.isTackling then
-            -- Закончился телк, устанавливаем кулдаун 3 секунды
             playerData.isTackling = false
             playerData.tackleCD = 3.0
         end
@@ -854,7 +852,6 @@ function Visuals.Init(UI, Core, notify)
         return playerData
     end
 
-    -- Функция для форматирования времени
     local function formatTime(seconds)
         if seconds <= 0 then
             return "0"
@@ -862,22 +859,18 @@ function Visuals.Init(UI, Core, notify)
         return string.format("%.1f", seconds)
     end
 
-    -- Функция для получения размеров персонажа
     local function getCharacterSize(character)
         local humanoid = character:FindFirstChild("Humanoid")
         if humanoid then
-            -- Для 2D: высота больше
             if ESP.Settings.ESPMode.Value == "2D" then
                 local height = humanoid.HipHeight * 3.2 + 4.0
                 local width = height * 0.4
                 return Vector3.new(width, height, 1)
             else
-                -- Для 3D: немного ниже
                 local height = humanoid.HipHeight * 1.8 + 2.8
                 return Vector3.new(2.8, height, 2.8)
             end
         end
-        -- Размеры по умолчанию
         if ESP.Settings.ESPMode.Value == "2D" then
             return Vector3.new(4.0, 10, 1)
         else
@@ -885,7 +878,6 @@ function Visuals.Init(UI, Core, notify)
         end
     end
 
-    -- Функция для расчета 3D точек (с измененным Y)
     local function get3DBoxPoints(character, camera)
         local size = getCharacterSize(character)
         local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head") or character:FindFirstChild("Torso")
@@ -894,10 +886,8 @@ function Visuals.Init(UI, Core, notify)
         local cf = rootPart.CFrame
         local points = {}
         
-        -- Смещаем бокс ниже по Y (отрицательное значение)
         local yOffset = Vector3.new(0, -0.5, 0)
         
-        -- 8 углов куба со смещением по Y
         local corners = {
             Vector3.new(-size.X/2, -size.Y/2, -size.Z/2) + yOffset,
             Vector3.new(size.X/2, -size.Y/2, -size.Z/2) + yOffset,
@@ -909,7 +899,6 @@ function Visuals.Init(UI, Core, notify)
             Vector3.new(-size.X/2, size.Y/2, size.Z/2) + yOffset
         }
         
-        -- Преобразуем в мировые координаты и затем в 2D
         for i, corner in ipairs(corners) do
             local worldPos = cf:PointToWorldSpace(corner)
             local screenPos, visible = camera:WorldToViewportPoint(worldPos)
@@ -920,7 +909,6 @@ function Visuals.Init(UI, Core, notify)
         return points
     end
 
-    -- Функция для расчета масштаба текста в зависимости от расстояния
     local function calculateTextScale(distance)
         local minDistance = 10
         local maxDistance = 100
@@ -935,6 +923,51 @@ function Visuals.Init(UI, Core, notify)
             local normalized = (distance - minDistance) / (maxDistance - minDistance)
             return maxScale - (normalized * (maxScale - minScale))
         end
+    end
+
+    -- Функция для расчета вертикальных позиций элементов
+    local function calculateVerticalPositions(rootPos, textScale, screenHeight)
+        local positions = {}
+        local currentY = rootPos.Y
+        
+        -- Базовая высота для 2D и 3D режимов
+        local baseOffset = ESP.Settings.ESPMode.Value == "3D" and 50 or 30
+        currentY = currentY + baseOffset * textScale
+        
+        -- Имя игрока
+        positions.Name = currentY
+        currentY = currentY + 20 * textScale
+        
+        -- Информация (страна/устройство)
+        positions.Info = currentY
+        currentY = currentY + 20 * textScale
+        
+        -- Бары кулдаунов (используем смещение из настроек)
+        positions.Bars = currentY + ESP.Settings.BoxSettings.BarOffset.Value * textScale
+        currentY = positions.Bars + 10 * textScale
+        
+        -- Текст кулдаунов
+        positions.Text = currentY + ESP.Settings.BoxSettings.TextOffset.Value * textScale
+        
+        -- Проверка границ экрана
+        for name, y in pairs(positions) do
+            if y < 20 then
+                positions[name] = 20
+            elseif y > screenHeight - 50 then
+                positions[name] = screenHeight - 50
+            end
+        end
+        
+        -- Гарантируем правильную последовательность
+        if positions.Bars <= positions.Info then
+            positions.Bars = positions.Info + 20 * textScale
+        end
+        
+        if positions.Text <= positions.Bars then
+            positions.Text = positions.Bars + 20 * textScale
+        end
+        
+        return positions
     end
 
     local function createESP(player)
@@ -952,15 +985,15 @@ function Visuals.Init(UI, Core, notify)
             NameDrawing = Drawing.new("Text"),
             CountryDrawing = Drawing.new("Text"),
             DeviceDrawing = Drawing.new("Text"),
-            DribbleTextDrawing = Drawing.new("Text"), -- Текст кулдауна дриблинга
-            TackleTextDrawing = Drawing.new("Text"), -- Текст кулдауна текла
+            DribbleTextDrawing = Drawing.new("Text"),
+            TackleTextDrawing = Drawing.new("Text"),
             NameGui = nil,
             CountryGui = nil,
             DeviceGui = nil,
             DribbleTextGui = nil,
             TackleTextGui = nil,
-            DribbleBar = nil, -- Бар кулдауна дриблинга
-            TackleBar = nil, -- Бар кулдауна текла
+            DribbleBar = nil,
+            TackleBar = nil,
             LastPosition = nil,
             LastVisible = false,
             LastIsSameTeam = nil
@@ -972,7 +1005,6 @@ function Visuals.Init(UI, Core, notify)
             line.Visible = false
         end
 
-        -- Создаем 12 линий для 3D куба
         for i = 1, 12 do
             esp.Box3DLines[i] = Drawing.new("Line")
             esp.Box3DLines[i].Thickness = ESP.Settings.BoxSettings.Thickness.Value
@@ -984,42 +1016,36 @@ function Visuals.Init(UI, Core, notify)
         esp.Filled.Transparency = 1 - ESP.Settings.BoxSettings.FilledTransparency.Value
         esp.Filled.Visible = false
 
-        -- Настройки текста для имени
         esp.NameDrawing.Size = ESP.Settings.TextSettings.TextSize.Value
         esp.NameDrawing.Font = ESP.Settings.TextSettings.TextFont.Value
         esp.NameDrawing.Center = true
         esp.NameDrawing.Outline = true
         esp.NameDrawing.Visible = false
 
-        -- Настройки текста для страны
         esp.CountryDrawing.Size = math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.8)
         esp.CountryDrawing.Font = ESP.Settings.TextSettings.TextFont.Value
         esp.CountryDrawing.Center = true
         esp.CountryDrawing.Outline = true
         esp.CountryDrawing.Visible = false
 
-        -- Настройки текста для устройства
         esp.DeviceDrawing.Size = math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.8)
         esp.DeviceDrawing.Font = ESP.Settings.TextSettings.TextFont.Value
         esp.DeviceDrawing.Center = true
         esp.DeviceDrawing.Outline = true
         esp.DeviceDrawing.Visible = false
 
-        -- Настройки текста для кулдауна дриблинга
         esp.DribbleTextDrawing.Size = math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.8)
         esp.DribbleTextDrawing.Font = ESP.Settings.TextSettings.TextFont.Value
         esp.DribbleTextDrawing.Center = true
         esp.DribbleTextDrawing.Outline = true
         esp.DribbleTextDrawing.Visible = false
 
-        -- Настройки текста для кулдауна текла
         esp.TackleTextDrawing.Size = math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.8)
         esp.TackleTextDrawing.Font = ESP.Settings.TextSettings.TextFont.Value
         esp.TackleTextDrawing.Center = true
         esp.TackleTextDrawing.Outline = true
         esp.TackleTextDrawing.Visible = false
 
-        -- Создаем GUI элементы
         local function createGuiElement(textSize, name)
             local label = Instance.new("TextLabel")
             label.Size = UDim2.new(0, 80, 0, 20)
@@ -1034,13 +1060,14 @@ function Visuals.Init(UI, Core, notify)
             return label
         end
 
-        -- Создаем бар кулдауна
+        -- Улучшенная функция создания баров
         local function createCDBar(color, name)
             local frame = Instance.new("Frame")
-            frame.Size = UDim2.new(0, 100, 0, 6) -- Увеличена ширина до 100, высота 6
+            frame.Size = UDim2.new(0, ESP.Settings.BoxSettings.BarWidth.Value, 0, ESP.Settings.BoxSettings.BarHeight.Value)
             frame.BackgroundColor3 = color
             frame.BorderSizePixel = 0
             frame.Visible = false
+            frame.ZIndex = 1 -- Устанавливаем низкий ZIndex для баров
             frame.Parent = ESPGui
             
             local corner = Instance.new("UICorner")
@@ -1056,9 +1083,15 @@ function Visuals.Init(UI, Core, notify)
         esp.DribbleTextGui = createGuiElement(math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.8), "DribbleText")
         esp.TackleTextGui = createGuiElement(math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.8), "TackleText")
         
-        -- Создаем бары кулдаунов
         esp.DribbleBar = createCDBar(ESP.Settings.BoxSettings.DribbleBarColor.Value, "DribbleBar")
         esp.TackleBar = createCDBar(ESP.Settings.BoxSettings.TackleBarColor.Value, "TackleBar")
+        
+        -- Устанавливаем ZIndex для текстовых элементов
+        if esp.NameGui then esp.NameGui.ZIndex = 2 end
+        if esp.CountryGui then esp.CountryGui.ZIndex = 2 end
+        if esp.DeviceGui then esp.DeviceGui.ZIndex = 2 end
+        if esp.DribbleTextGui then esp.DribbleTextGui.ZIndex = 2 end
+        if esp.TackleTextGui then esp.TackleTextGui.ZIndex = 2 end
 
         ESP.Elements[player] = esp
     end
@@ -1087,11 +1120,9 @@ function Visuals.Init(UI, Core, notify)
         Cache.PlayerBoxCache[player] = nil
     end
 
-    -- Основная функция обновления ESP
     local function updateESP()
         local currentTime = tick()
         
-        -- Проверяем интервал для 60 FPS
         if currentTime - ESP.LastUpdateTime < ESP.UpdateInterval then
             return
         end
@@ -1188,7 +1219,6 @@ function Visuals.Init(UI, Core, notify)
             esp.LastVisible = true
             esp.LastPosition = rootPos
 
-            -- Определяем цвет в зависимости от команды
             local playerTeam = getPlayerTeam(player)
             local isSameTeam = false
             
@@ -1199,7 +1229,6 @@ function Visuals.Init(UI, Core, notify)
                 isSameTeam = esp.LastIsSameTeam or false
             end
 
-            -- Определяем базовый цвет
             local baseColor
             if ESP.Settings.UseTeamColor.Value and playerTeam then
                 baseColor = playerTeam.TeamColor.Color
@@ -1219,7 +1248,6 @@ function Visuals.Init(UI, Core, notify)
                 color = gradColor1:Lerp(gradColor2, t)
             end
 
-            -- Получаем данные игрока
             local playerData = getPlayerCooldowns(player)
             local dribbleCD = playerData.dribbleCD
             local tackleCD = playerData.tackleCD
@@ -1229,7 +1257,6 @@ function Visuals.Init(UI, Core, notify)
             local tackleColor = tackleCD > 0 and ESP.Settings.BoxSettings.TackleBarColor.Value or ESP.Settings.BoxSettings.ReadyColor.Value
 
             if ESP.Settings.ESPMode.Value == "3D" then
-                -- 3D ESP
                 local points = get3DBoxPoints(character, camera)
                 
                 if points and ESP.Settings.BoxSettings.ShowBox.Value then
@@ -1254,7 +1281,6 @@ function Visuals.Init(UI, Core, notify)
                     for _, line in pairs(esp.Box3DLines) do line.Visible = false end
                 end
             else
-                -- 2D ESP
                 for _, line in pairs(esp.Box3DLines) do line.Visible = false end
                 
                 if ESP.Settings.BoxSettings.ShowBox.Value then
@@ -1304,64 +1330,17 @@ function Visuals.Init(UI, Core, notify)
                 end
             end
 
-            -- Расчет позиций для текстовой информации
-            local nameY, infoY, barsY, textY
-            
-            -- Масштаб в зависимости от расстояния
+            -- Расчет позиций с использованием улучшенной функции
             local distance = (camera.CFrame.Position - rootPart.Position).Magnitude
             local textScale = calculateTextScale(distance) * ESP.Settings.TextSettings.TextScale.Value
-            local barScale = textScale * 1.2 -- Бары немного больше
+            local screenHeight = camera.ViewportSize.Y
             
-            -- Базовая позиция под боксом
-            local baseY
-            if ESP.Settings.ESPMode.Value == "3D" then
-                local points = get3DBoxPoints(character, camera)
-                if points then
-                    local maxY = -math.huge
-                    for i = 1, 8 do
-                        if points[i].Y > maxY then maxY = points[i].Y end
-                    end
-                    baseY = maxY + 10 * textScale
-                else
-                    baseY = rootPos.Y + 30 * textScale
-                end
-            else
-                local feetPos = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3.5, 0))
-                baseY = feetPos.Y + 10 * textScale
-            end
-
-            -- Автоматическое распределение позиций
-            local currentY = baseY
-            local verticalSpacing = 18 * textScale
+            local positions = calculateVerticalPositions(rootPos, textScale, screenHeight)
             
-            -- Имя игрока
-            nameY = currentY
-            currentY = currentY + verticalSpacing
-            
-            -- Информация (страна и устройство)
-            local hasInfo = ESP.Settings.BoxSettings.ShowCountry.Value or ESP.Settings.BoxSettings.ShowDevice.Value
-            if hasInfo then
-                infoY = currentY
-                currentY = currentY + verticalSpacing
-            end
-            
-            -- Бары кулдаунов
-            barsY = currentY
-            currentY = currentY + 8 * textScale + 5 -- Высота бара + отступ
-            
-            -- Текст кулдаунов
-            textY = barsY + 8 * textScale + 2
-
-            -- Проверяем, чтобы текст не уходил за пределы экрана
-            local screenHeight = Core.Services.UserInputService:GetMouseLocation().Y * 2
-            if nameY < 20 then nameY = 20 end
-            if hasInfo and infoY < 40 then infoY = 40 end
-            if barsY < 60 then barsY = 60 end
-            if textY < 80 then textY = 80 end
-            if nameY > screenHeight - 100 then nameY = screenHeight - 100 end
-            if hasInfo and infoY > screenHeight - 80 then infoY = screenHeight - 80 end
-            if barsY > screenHeight - 60 then barsY = screenHeight - 60 end
-            if textY > screenHeight - 40 then textY = screenHeight - 40 end
+            -- Получаем параметры баров из настроек
+            local barWidth = ESP.Settings.BoxSettings.BarWidth.Value * textScale
+            local barHeight = ESP.Settings.BoxSettings.BarHeight.Value * textScale
+            local barOffsetX = rootPos.X - barWidth / 2
 
             -- Отображение имени
             if ESP.Settings.BoxSettings.ShowNames.Value then
@@ -1371,13 +1350,13 @@ function Visuals.Init(UI, Core, notify)
                 if ESP.Settings.TextSettings.TextMethod.Value == "Drawing" then
                     esp.NameDrawing.Text = player.Name
                     esp.NameDrawing.Size = actualTextSize
-                    esp.NameDrawing.Position = Vector2.new(rootPos.X, nameY)
+                    esp.NameDrawing.Position = Vector2.new(rootPos.X, positions.Name)
                     esp.NameDrawing.Color = nameColor
                     esp.NameDrawing.Visible = true
                     if esp.NameGui then esp.NameGui.Visible = false end
                 elseif ESP.Settings.TextSettings.TextMethod.Value == "GUI" and esp.NameGui then
                     esp.NameGui.Text = player.Name
-                    esp.NameGui.Position = UDim2.new(0, rootPos.X - 40, 0, nameY)
+                    esp.NameGui.Position = UDim2.new(0, rootPos.X - 40, 0, positions.Name)
                     esp.NameGui.TextSize = actualTextSize
                     esp.NameGui.TextColor3 = nameColor
                     esp.NameGui.Visible = true
@@ -1389,6 +1368,7 @@ function Visuals.Init(UI, Core, notify)
             end
 
             -- Отображение информации (страна и устройство)
+            local hasInfo = ESP.Settings.BoxSettings.ShowCountry.Value or ESP.Settings.BoxSettings.ShowDevice.Value
             if hasInfo then
                 local infoParts = {}
                 
@@ -1407,13 +1387,13 @@ function Visuals.Init(UI, Core, notify)
                 if ESP.Settings.TextSettings.TextMethod.Value == "Drawing" then
                     esp.CountryDrawing.Text = infoText
                     esp.CountryDrawing.Size = actualInfoSize
-                    esp.CountryDrawing.Position = Vector2.new(rootPos.X, infoY)
+                    esp.CountryDrawing.Position = Vector2.new(rootPos.X, positions.Info)
                     esp.CountryDrawing.Color = infoColor
                     esp.CountryDrawing.Visible = true
                     if esp.CountryGui then esp.CountryGui.Visible = false end
                 elseif ESP.Settings.TextSettings.TextMethod.Value == "GUI" and esp.CountryGui then
                     esp.CountryGui.Text = infoText
-                    esp.CountryGui.Position = UDim2.new(0, rootPos.X - 40, 0, infoY)
+                    esp.CountryGui.Position = UDim2.new(0, rootPos.X - 40, 0, positions.Info)
                     esp.CountryGui.TextSize = actualInfoSize
                     esp.CountryGui.TextColor3 = infoColor
                     esp.CountryGui.Visible = true
@@ -1424,18 +1404,15 @@ function Visuals.Init(UI, Core, notify)
                 if esp.CountryGui then esp.CountryGui.Visible = false end
             end
 
-            -- Отображение баров кулдаунов
-            local barWidth = 100 * barScale
-            local barHeight = 6 * barScale
-            
+            -- Отображение баров кулдаунов (с правильными позициями)
             -- Бар дриблинга
             if ESP.Settings.BoxSettings.ShowDribbleBar.Value and esp.DribbleBar then
-                local dribblePercent = math.min(1, dribbleCD / 3.5) -- 3.5 секунды макс
+                local dribblePercent = math.min(1, dribbleCD / 3.5)
                 local currentWidth = barWidth * (1 - dribblePercent)
                 
                 esp.DribbleBar.Position = UDim2.new(
-                    0, rootPos.X - barWidth/2,
-                    0, barsY
+                    0, barOffsetX,
+                    0, positions.Bars
                 )
                 esp.DribbleBar.Size = UDim2.new(0, currentWidth, 0, barHeight)
                 esp.DribbleBar.BackgroundColor3 = dribbleColor
@@ -1446,12 +1423,12 @@ function Visuals.Init(UI, Core, notify)
             
             -- Бар текла
             if ESP.Settings.BoxSettings.ShowTackleBar.Value and esp.TackleBar then
-                local tacklePercent = math.min(1, tackleCD / 3.0) -- 3 секунды макс
+                local tacklePercent = math.min(1, tackleCD / 3.0)
                 local currentWidth = barWidth * (1 - tacklePercent)
                 
                 esp.TackleBar.Position = UDim2.new(
-                    0, rootPos.X - barWidth/2,
-                    0, barsY + barHeight + 5 * textScale
+                    0, barOffsetX,
+                    0, positions.Bars + barHeight + 5 * textScale
                 )
                 esp.TackleBar.Size = UDim2.new(0, currentWidth, 0, barHeight)
                 esp.TackleBar.BackgroundColor3 = tackleColor
@@ -1468,13 +1445,13 @@ function Visuals.Init(UI, Core, notify)
                 if ESP.Settings.TextSettings.TextMethod.Value == "Drawing" then
                     esp.DribbleTextDrawing.Text = dribbleText
                     esp.DribbleTextDrawing.Size = actualTextSize
-                    esp.DribbleTextDrawing.Position = Vector2.new(rootPos.X, textY)
+                    esp.DribbleTextDrawing.Position = Vector2.new(rootPos.X, positions.Text)
                     esp.DribbleTextDrawing.Color = dribbleColor
                     esp.DribbleTextDrawing.Visible = true
                     if esp.DribbleTextGui then esp.DribbleTextGui.Visible = false end
                 elseif ESP.Settings.TextSettings.TextMethod.Value == "GUI" and esp.DribbleTextGui then
                     esp.DribbleTextGui.Text = dribbleText
-                    esp.DribbleTextGui.Position = UDim2.new(0, rootPos.X - 40, 0, textY)
+                    esp.DribbleTextGui.Position = UDim2.new(0, rootPos.X - 40, 0, positions.Text)
                     esp.DribbleTextGui.TextSize = actualTextSize
                     esp.DribbleTextGui.TextColor3 = dribbleColor
                     esp.DribbleTextGui.Visible = true
@@ -1490,13 +1467,13 @@ function Visuals.Init(UI, Core, notify)
                 if ESP.Settings.TextSettings.TextMethod.Value == "Drawing" then
                     esp.TackleTextDrawing.Text = tackleText
                     esp.TackleTextDrawing.Size = actualTextSize
-                    esp.TackleTextDrawing.Position = Vector2.new(rootPos.X, textY + verticalSpacing * 0.8)
+                    esp.TackleTextDrawing.Position = Vector2.new(rootPos.X, positions.Text + 20 * textScale)
                     esp.TackleTextDrawing.Color = tackleColor
                     esp.TackleTextDrawing.Visible = true
                     if esp.TackleTextGui then esp.TackleTextGui.Visible = false end
                 elseif ESP.Settings.TextSettings.TextMethod.Value == "GUI" and esp.TackleTextGui then
                     esp.TackleTextGui.Text = tackleText
-                    esp.TackleTextGui.Position = UDim2.new(0, rootPos.X - 40, 0, textY + verticalSpacing * 0.8)
+                    esp.TackleTextGui.Position = UDim2.new(0, rootPos.X - 40, 0, positions.Text + 20 * textScale)
                     esp.TackleTextGui.TextSize = actualTextSize
                     esp.TackleTextGui.TextColor3 = tackleColor
                     esp.TackleTextGui.Visible = true
@@ -1509,7 +1486,6 @@ function Visuals.Init(UI, Core, notify)
         end
     end
 
-    -- Инициализация ESP
     task.wait(1)
     for _, player in pairs(Core.Services.Players:GetPlayers()) do
         if player ~= Core.PlayerData.LocalPlayer then createESP(player) end
@@ -1521,7 +1497,6 @@ function Visuals.Init(UI, Core, notify)
 
     Core.Services.Players.PlayerRemoving:Connect(removeESP)
     
-    -- Запускаем ESP с фиксированным FPS
     local function runESP()
         while true do
             updateESP()
@@ -1819,6 +1794,83 @@ function Visuals.Init(UI, Core, notify)
                     end
                 end
             }, 'GradientSpeed')
+            
+            -- НОВЫЕ НАСТРОЙКИ ПОЗИЦИОНИРОВАНИЯ
+            UI.Sections.ESP:Slider({
+                Name = "Text Offset",
+                Minimum = 50,
+                Maximum = 200,
+                Default = ESP.Settings.BoxSettings.TextOffset.Default,
+                Precision = 0,
+                Callback = function(value)
+                    ESP.Settings.BoxSettings.TextOffset.Value = value
+                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                        ESP.LastNotificationTime = tick()
+                        notify("ESP", "Text Offset set to: " .. value)
+                    end
+                end
+            }, 'TextOffset')
+            
+            UI.Sections.ESP:Slider({
+                Name = "Bar Offset",
+                Minimum = 5,
+                Maximum = 50,
+                Default = ESP.Settings.BoxSettings.BarOffset.Default,
+                Precision = 0,
+                Callback = function(value)
+                    ESP.Settings.BoxSettings.BarOffset.Value = value
+                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                        ESP.LastNotificationTime = tick()
+                        notify("ESP", "Bar Offset set to: " .. value)
+                    end
+                end
+            }, 'BarOffset')
+            
+            UI.Sections.ESP:Slider({
+                Name = "Bar Width",
+                Minimum = 50,
+                Maximum = 150,
+                Default = ESP.Settings.BoxSettings.BarWidth.Default,
+                Precision = 0,
+                Callback = function(value)
+                    ESP.Settings.BoxSettings.BarWidth.Value = value
+                    for _, esp in pairs(ESP.Elements) do
+                        if esp.DribbleBar then 
+                            esp.DribbleBar.Size = UDim2.new(0, value, 0, esp.DribbleBar.Size.Y.Offset)
+                        end
+                        if esp.TackleBar then 
+                            esp.TackleBar.Size = UDim2.new(0, value, 0, esp.TackleBar.Size.Y.Offset)
+                        end
+                    end
+                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                        ESP.LastNotificationTime = tick()
+                        notify("ESP", "Bar Width set to: " .. value)
+                    end
+                end
+            }, 'BarWidth')
+            
+            UI.Sections.ESP:Slider({
+                Name = "Bar Height",
+                Minimum = 3,
+                Maximum = 10,
+                Default = ESP.Settings.BoxSettings.BarHeight.Default,
+                Precision = 0,
+                Callback = function(value)
+                    ESP.Settings.BoxSettings.BarHeight.Value = value
+                    for _, esp in pairs(ESP.Elements) do
+                        if esp.DribbleBar then 
+                            esp.DribbleBar.Size = UDim2.new(0, esp.DribbleBar.Size.X.Offset, 0, value)
+                        end
+                        if esp.TackleBar then 
+                            esp.TackleBar.Size = UDim2.new(0, esp.TackleBar.Size.X.Offset, 0, value)
+                        end
+                    end
+                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                        ESP.LastNotificationTime = tick()
+                        notify("ESP", "Bar Height set to: " .. value)
+                    end
+                end
+            }, 'BarHeight')
             
             UI.Sections.ESP:Divider()
             
