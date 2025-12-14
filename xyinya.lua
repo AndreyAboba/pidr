@@ -1,5 +1,5 @@
 local Visuals = {}
-
+print('3')
 function Visuals.Init(UI, Core, notify)
     local State = {
         MenuButton = { 
