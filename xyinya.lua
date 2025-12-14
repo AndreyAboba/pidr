@@ -216,8 +216,8 @@ function Visuals.Init(UI, Core, notify)
         iconContainer.Size = UDim2.new(0, 34, 0, 34) -- Новый размер 34x34
         -- Центрирование: 17 = 34/2
         iconContainer.Position = UDim2.new(0.5, -17, 0.5, -17) -- Идеально по центру
-        iconContainer.BackgroundColor3 = Color3.fromRGB(25, 40, 70) -- Темнее чем фон
-        iconContainer.BackgroundTransparency = 0.2 -- Менее прозрачный (0.2 вместо 0.4)
+        iconContainer.BackgroundColor3 = Color3.fromRGB(25, 40, 55) -- Темнее чем фон
+        iconContainer.BackgroundTransparency = 0.55 -- Менее прозрачный (0.2 вместо 0.4)
         iconContainer.BorderSizePixel = 0
         iconContainer.Parent = buttonFrame
         
@@ -1025,7 +1025,7 @@ function Visuals.Init(UI, Core, notify)
             -- Добавляем Dropdown для выбора дизайна
             UI.Sections.MenuButton:Dropdown({
                 Name = "Design",
-                Options = {"Default", "Liquid Glass"},
+                Options = {"Default", "Default v2"},
                 Default = "Default",
                 Callback = function(value)
                     applyDesign(value)
