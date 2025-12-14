@@ -2180,6 +2180,14 @@ function MacLib:Window(Settings)
 					function SliderFunctions:UpdateName(Name)
 						sliderName = Name
 					end
+                    function SliderFunctions:LinkToConfig(configTable, key)
+                        Settings.ConfigTable = configTable
+                        Settings.ConfigKey = key
+                        
+                        if configTable and key and configTable[key] ~= nil then
+                            self:UpdateValue(configTable[key])
+                        end
+                    end
 					function SliderFunctions:SetVisibility(State)
 						slider.Visible = State
 					end
