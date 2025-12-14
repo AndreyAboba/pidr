@@ -43,13 +43,14 @@ function Visuals.Init(UI, Core, notify)
             TeamColor = { Value = Color3.fromRGB(0, 255, 0), Default = Color3.fromRGB(0, 255, 0) },
             TeamCheck = { Value = true, Default = true },
             UseTeamColor = { Value = false, Default = false },
-            ShowCountry = { Value = true, Default = true }, -- Новый параметр
-            ShowDevice = { Value = true, Default = true }, -- Новый параметр
             BoxSettings = {
                 Thickness = { Value = 1, Default = 1 },
                 Transparency = { Value = 0.2, Default = 0.2 },
                 ShowBox = { Value = true, Default = true },
                 ShowNames = { Value = true, Default = true },
+                ShowCountry = { Value = true, Default = true }, -- Новое: показ страны
+                ShowDevice = { Value = true, Default = true }, -- Новое: показ устройства
+                InfoPosition = { Value = "Bottom", Default = "Bottom" }, -- Новое: расположение информации
                 GradientEnabled = { Value = false, Default = false },
                 FilledEnabled = { Value = false, Default = false },
                 FilledTransparency = { Value = 0.5, Default = 0.5 },
@@ -65,7 +66,7 @@ function Visuals.Init(UI, Core, notify)
         GuiElements = {},
         LastNotificationTime = 0,
         NotificationDelay = 5,
-        UpdateInterval = 1 / 60, -- 60 FPS
+        UpdateInterval = 1 / 60,
         LastUpdateTime = 0
     }
 
@@ -665,60 +666,6 @@ function Visuals.Init(UI, Core, notify)
         test:Remove()
     end)
 
-    -- Функции для парсинга информации об игроке
-    local function getCountryInfo(player)
-        -- Проверяем наличие OriginalCountry
-        local success, country = pcall(function()
-            return player.OriginalCountry
-        end)
-        
-        if success and country and typeof(country) == "string" and #country > 0 then
-            return country -- Возвращаем эмодзи страны
-        end
-        
-        return nil
-    end
-
-    local function getDeviceInfo(player)
-        -- Проверяем isMobile
-        local success, isMobile = pcall(function()
-            return player.isMobile
-        end)
-        
-        if not success then
-            return "Unknown"
-        end
-        
-        -- Если мобильный
-        if isMobile == true then
-            return "📱 Mobile"
-        end
-        
-        -- Если не мобильный, проверяем deviceType
-        local success2, deviceType = pcall(function()
-            return player.deviceType
-        end)
-        
-        if not success2 then
-            return "Unknown"
-        end
-        
-        -- Определяем тип устройства
-        if deviceType == "PC" then
-            return "💻 PC"
-        elseif deviceType == "Unknown" then
-            return "🎮 Console"
-        elseif deviceType == "Xbox" then
-            return "🎮 Xbox"
-        elseif deviceType == "PlayStation" then
-            return "🎮 PlayStation"
-        elseif deviceType == "Switch" then
-            return "🎮 Switch"
-        else
-            return "🎮 " .. tostring(deviceType)
-        end
-    end
-
     -- Функция для проверки команды
     local function getPlayerTeam(player)
         if player and player.Team then
@@ -738,55 +685,79 @@ function Visuals.Init(UI, Core, notify)
         return false
     end
 
-    -- Функция для получения размеров персонажа с улучшенными пропорциями
+    -- Функция для получения страны игрока
+    local function getPlayerCountry(player)
+        if player and player:FindFirstChild("OriginalCountry") then
+            local countryData = player.OriginalCountry.Value
+            if countryData and type(countryData) == "string" then
+                -- Возвращаем эмодзи страны как обычный текст
+                return countryData
+            end
+        end
+        return "🌐" -- Значок по умолчанию
+    end
+
+    -- Функция для получения устройства игрока
+    local function getPlayerDevice(player)
+        if player.isMobile and player.isMobile.Value then
+            return "📱" -- Телефон
+        else
+            local deviceType = player.deviceType and player.deviceType.Value
+            if deviceType == "PC" then
+                return "💻" -- ПК
+            elseif deviceType == "Unknown" or deviceType == "Unkown" then
+                return "🎮" -- Консоль (вероятно)
+            else
+                return "❓" -- Неизвестно
+            end
+        end
+    end
+
+    -- Функция для получения размеров персонажа
     local function getCharacterSize(character)
         local humanoid = character:FindFirstChild("Humanoid")
         if humanoid then
-            local hipHeight = humanoid.HipHeight
-            
-            -- Для 2D: значительно увеличенная высота, нормальные пропорции
+            -- Для 2D: высота больше, пропорции выше (переделано)
             if ESP.Settings.ESPMode.Value == "2D" then
-                local height = hipHeight * 3.5 + 4 -- Значительно выше
-                local width = height * 0.4 -- Узкий бокс
+                local height = humanoid.HipHeight * 2.8 + 3.5 -- Еще выше
+                local width = height * 0.45 -- Нормальная пропорция (ширина = 45% от высоты)
                 return Vector3.new(width, height, 1)
             else
-                -- Для 3D: чуть ниже высота, нормальные пропорции
-                local height = hipHeight * 1.6 + 2.2 -- Чуть ниже
-                local width = height * 0.8 -- Нормальная пропорция ширины к высоте
-                local depth = width * 0.7 -- Глубина меньше ширины
-                return Vector3.new(width, height, depth)
+                -- Для 3D: немного ниже, симметричная пропорция
+                local height = humanoid.HipHeight * 1.6 + 2.2 -- Немного ниже
+                return Vector3.new(2.6, height, 2.6) -- Симметрично
             end
         end
         -- Размеры по умолчанию
         if ESP.Settings.ESPMode.Value == "2D" then
-            return Vector3.new(2.5, 9, 1) -- Выше для 2D
+            return Vector3.new(3.6, 9, 1) -- Выше и пропорциональнее для 2D
         else
-            return Vector3.new(2.5, 5.5, 1.8) -- Нормальные пропорции для 3D
+            return Vector3.new(3, 5.5, 3) -- Немного ниже для 3D
         end
     end
 
-    -- Функция для расчета 3D точек с поднятым положением
+    -- Функция для расчета 3D точек (с измененным Y)
     local function get3DBoxPoints(character, camera)
         local size = getCharacterSize(character)
         local rootPart = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Head") or character:FindFirstChild("Torso")
         if not rootPart then return nil end
         
-        -- Поднимаем позицию бокса немного выше
-        local positionOffset = Vector3.new(0, size.Y * 0.1, 0) -- Поднимаем на 10% от высоты
-        local cf = rootPart.CFrame + positionOffset
-        
+        local cf = rootPart.CFrame
         local points = {}
         
-        -- 8 углов куба
+        -- Смещаем бокс выше по Y
+        local yOffset = Vector3.new(0, 0.8, 0) -- Смещаем немного выше
+        
+        -- 8 углов куба со смещением по Y
         local corners = {
-            Vector3.new(-size.X/2, -size.Y/2, -size.Z/2), -- Нижний задний левый
-            Vector3.new(size.X/2, -size.Y/2, -size.Z/2),  -- Нижний задний правый
-            Vector3.new(size.X/2, size.Y/2, -size.Z/2),   -- Верхний задний правый
-            Vector3.new(-size.X/2, size.Y/2, -size.Z/2),  -- Верхний задний левый
-            Vector3.new(-size.X/2, -size.Y/2, size.Z/2),  -- Нижний передний левый
-            Vector3.new(size.X/2, -size.Y/2, size.Z/2),   -- Нижний передний правый
-            Vector3.new(size.X/2, size.Y/2, size.Z/2),    -- Верхний передний правый
-            Vector3.new(-size.X/2, size.Y/2, size.Z/2)    -- Верхний передний левый
+            Vector3.new(-size.X/2, -size.Y/2, -size.Z/2) + yOffset,
+            Vector3.new(size.X/2, -size.Y/2, -size.Z/2) + yOffset,
+            Vector3.new(size.X/2, size.Y/2, -size.Z/2) + yOffset,
+            Vector3.new(-size.X/2, size.Y/2, -size.Z/2) + yOffset,
+            Vector3.new(-size.X/2, -size.Y/2, size.Z/2) + yOffset,
+            Vector3.new(size.X/2, -size.Y/2, size.Z/2) + yOffset,
+            Vector3.new(size.X/2, size.Y/2, size.Z/2) + yOffset,
+            Vector3.new(-size.X/2, size.Y/2, size.Z/2) + yOffset
         }
         
         -- Преобразуем в мировые координаты и затем в 2D
@@ -813,14 +784,14 @@ function Visuals.Init(UI, Core, notify)
             Box3DLines = {},
             Filled = supportsQuad and Drawing.new("Quad") or Drawing.new("Square"),
             NameDrawing = Drawing.new("Text"),
-            CountryDrawing = Drawing.new("Text"), -- Новый Drawing для страны
-            DeviceDrawing = Drawing.new("Text"), -- Новый Drawing для устройства
+            CountryDrawing = Drawing.new("Text"), -- Новое: текст страны
+            DeviceDrawing = Drawing.new("Text"), -- Новое: текст устройства
             NameGui = nil,
+            CountryGui = nil, -- Новое: GUI для страны
+            DeviceGui = nil, -- Новое: GUI для устройства
             LastPosition = nil,
             LastVisible = false,
-            LastIsSameTeam = nil,
-            LastCountry = nil,
-            LastDevice = nil
+            LastIsSameTeam = nil
         }
 
         for _, line in pairs(esp.BoxLines) do
@@ -841,16 +812,29 @@ function Visuals.Init(UI, Core, notify)
         esp.Filled.Transparency = 1 - ESP.Settings.BoxSettings.FilledTransparency.Value
         esp.Filled.Visible = false
 
-        -- Настройка текстовых объектов
-        for _, textObj in pairs({esp.NameDrawing, esp.CountryDrawing, esp.DeviceDrawing}) do
-            textObj.Size = ESP.Settings.TextSettings.TextSize.Value
-            textObj.Font = ESP.Settings.TextSettings.TextFont.Value
-            textObj.Center = true
-            textObj.Outline = true
-            textObj.Visible = false
-        end
+        -- Настройки текста для имени
+        esp.NameDrawing.Size = ESP.Settings.TextSettings.TextSize.Value
+        esp.NameDrawing.Font = ESP.Settings.TextSettings.TextFont.Value
+        esp.NameDrawing.Center = true
+        esp.NameDrawing.Outline = true
+        esp.NameDrawing.Visible = false
+
+        -- Настройки текста для страны
+        esp.CountryDrawing.Size = math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.9)
+        esp.CountryDrawing.Font = ESP.Settings.TextSettings.TextFont.Value
+        esp.CountryDrawing.Center = true
+        esp.CountryDrawing.Outline = true
+        esp.CountryDrawing.Visible = false
+
+        -- Настройки текста для устройства
+        esp.DeviceDrawing.Size = math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.9)
+        esp.DeviceDrawing.Font = ESP.Settings.TextSettings.TextFont.Value
+        esp.DeviceDrawing.Center = true
+        esp.DeviceDrawing.Outline = true
+        esp.DeviceDrawing.Visible = false
 
         if ESP.Settings.TextSettings.TextMethod.Value == "GUI" then
+            -- GUI для имени
             esp.NameGui = Instance.new("TextLabel")
             esp.NameGui.Size = UDim2.new(0, 200, 0, 20)
             esp.NameGui.BackgroundTransparency = 1
@@ -863,6 +847,32 @@ function Visuals.Init(UI, Core, notify)
             esp.NameGui.Visible = false
             esp.NameGui.Parent = ESPGui
             ESP.GuiElements[player] = esp.NameGui
+
+            -- GUI для страны
+            esp.CountryGui = Instance.new("TextLabel")
+            esp.CountryGui.Size = UDim2.new(0, 200, 0, 18)
+            esp.CountryGui.BackgroundTransparency = 1
+            esp.CountryGui.TextSize = math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.9)
+            esp.CountryGui.Font = Enum.Font.Gotham
+            esp.CountryGui.TextColor3 = Color3.fromRGB(255, 255, 255)
+            esp.CountryGui.TextStrokeTransparency = 0
+            esp.CountryGui.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+            esp.CountryGui.TextXAlignment = Enum.TextXAlignment.Center
+            esp.CountryGui.Visible = false
+            esp.CountryGui.Parent = ESPGui
+
+            -- GUI для устройства
+            esp.DeviceGui = Instance.new("TextLabel")
+            esp.DeviceGui.Size = UDim2.new(0, 200, 0, 18)
+            esp.DeviceGui.BackgroundTransparency = 1
+            esp.DeviceGui.TextSize = math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.9)
+            esp.DeviceGui.Font = Enum.Font.Gotham
+            esp.DeviceGui.TextColor3 = Color3.fromRGB(255, 255, 255)
+            esp.DeviceGui.TextStrokeTransparency = 0
+            esp.DeviceGui.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+            esp.DeviceGui.TextXAlignment = Enum.TextXAlignment.Center
+            esp.DeviceGui.Visible = false
+            esp.DeviceGui.Parent = ESPGui
         end
 
         ESP.Elements[player] = esp
@@ -874,12 +884,19 @@ function Visuals.Init(UI, Core, notify)
         for _, line in pairs(ESP.Elements[player].Box3DLines or {}) do line:Remove() end
         ESP.Elements[player].Filled:Remove()
         ESP.Elements[player].NameDrawing:Remove()
-        ESP.Elements[player].CountryDrawing:Remove()
-        ESP.Elements[player].DeviceDrawing:Remove()
+        ESP.Elements[player].CountryDrawing:Remove() -- Удаляем текст страны
+        ESP.Elements[player].DeviceDrawing:Remove() -- Удаляем текст устройства
+        
         if ESP.Elements[player].NameGui then
             ESP.Elements[player].NameGui:Destroy()
-            ESP.GuiElements[player] = nil
         end
+        if ESP.Elements[player].CountryGui then
+            ESP.Elements[player].CountryGui:Destroy()
+        end
+        if ESP.Elements[player].DeviceGui then
+            ESP.Elements[player].DeviceGui:Destroy()
+        end
+        
         ESP.Elements[player] = nil
         Cache.PlayerCache[player] = nil
         Cache.PlayerBoxCache[player] = nil
@@ -904,6 +921,8 @@ function Visuals.Init(UI, Core, notify)
                 esp.CountryDrawing.Visible = false
                 esp.DeviceDrawing.Visible = false
                 if esp.NameGui then esp.NameGui.Visible = false end
+                if esp.CountryGui then esp.CountryGui.Visible = false end
+                if esp.DeviceGui then esp.DeviceGui.Visible = false end
                 esp.LastVisible = false
             end
             return
@@ -938,6 +957,8 @@ function Visuals.Init(UI, Core, notify)
                     esp.CountryDrawing.Visible = false
                     esp.DeviceDrawing.Visible = false
                     if esp.NameGui then esp.NameGui.Visible = false end
+                    if esp.CountryGui then esp.CountryGui.Visible = false end
+                    if esp.DeviceGui then esp.DeviceGui.Visible = false end
                     esp.LastVisible = false
                 end
                 continue
@@ -954,6 +975,8 @@ function Visuals.Init(UI, Core, notify)
                     esp.CountryDrawing.Visible = false
                     esp.DeviceDrawing.Visible = false
                     if esp.NameGui then esp.NameGui.Visible = false end
+                    if esp.CountryGui then esp.CountryGui.Visible = false end
+                    if esp.DeviceGui then esp.DeviceGui.Visible = false end
                     esp.LastVisible = false
                 end
                 continue
@@ -961,23 +984,6 @@ function Visuals.Init(UI, Core, notify)
 
             esp.LastVisible = true
             esp.LastPosition = rootPos
-
-            -- Получаем информацию о стране и устройстве
-            if ESP.Settings.ShowCountry.Value then
-                local country = getCountryInfo(player)
-                if country and country ~= esp.LastCountry then
-                    esp.CountryDrawing.Text = country
-                    esp.LastCountry = country
-                end
-            end
-            
-            if ESP.Settings.ShowDevice.Value then
-                local device = getDeviceInfo(player)
-                if device and device ~= esp.LastDevice then
-                    esp.DeviceDrawing.Text = device
-                    esp.LastDevice = device
-                end
-            end
 
             -- Определяем цвет в зависимости от команды
             local playerTeam = getPlayerTeam(player)
@@ -1015,11 +1021,10 @@ function Visuals.Init(UI, Core, notify)
                 local points = get3DBoxPoints(character, camera)
                 
                 if points and ESP.Settings.BoxSettings.ShowBox.Value then
-                    -- Определяем соединения для куба (12 линий)
                     local connections = {
-                        {1, 2}, {2, 3}, {3, 4}, {4, 1}, -- Задняя грань
-                        {5, 6}, {6, 7}, {7, 8}, {8, 5}, -- Передняя грань
-                        {1, 5}, {2, 6}, {3, 7}, {4, 8}  -- Соединительные линии
+                        {1, 2}, {2, 3}, {3, 4}, {4, 1},
+                        {5, 6}, {6, 7}, {7, 8}, {8, 5},
+                        {1, 5}, {2, 6}, {3, 7}, {4, 8}
                     }
                     
                     for i, conn in ipairs(connections) do
@@ -1031,7 +1036,6 @@ function Visuals.Init(UI, Core, notify)
                         end
                     end
                     
-                    -- Скрываем 2D линии
                     for _, line in pairs(esp.BoxLines) do line.Visible = false end
                     esp.Filled.Visible = false
                 else
@@ -1042,12 +1046,11 @@ function Visuals.Init(UI, Core, notify)
                 for _, line in pairs(esp.Box3DLines) do line.Visible = false end
                 
                 if ESP.Settings.BoxSettings.ShowBox.Value then
-                    local size = getCharacterSize(character)
-                    local headPos = camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, size.Y/2, 0))
-                    local feetPos = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, size.Y/2, 0))
+                    local headPos = camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, 3.5, 0))
+                    local feetPos = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3.5, 0))
                     
                     local height = math.abs(headPos.Y - feetPos.Y)
-                    local width = height * (size.X / size.Y) -- Используем пропорции из getCharacterSize
+                    local width = height * 0.45 -- Нормальная пропорция (45%)
                     
                     local topLeft = Vector2.new(rootPos.X - width/2, headPos.Y)
                     local topRight = Vector2.new(rootPos.X + width/2, headPos.Y)
@@ -1089,70 +1092,127 @@ function Visuals.Init(UI, Core, notify)
                 end
             end
 
-            -- Отображение текстовой информации
-            local textColor = ESP.Settings.BoxSettings.GradientEnabled.Value and color or baseColor
-            local textYOffset = 0
+            -- Расчет позиций для текстовой информации
+            local nameY, countryY, deviceY
             
-            -- Имя игрока (вверху)
-            if ESP.Settings.BoxSettings.ShowNames.Value then
-                local nameY
-                if ESP.Settings.ESPMode.Value == "3D" then
-                    local points = get3DBoxPoints(character, camera)
-                    if points then
-                        local minY = math.huge
-                        for i = 1, 8 do
-                            if points[i].Y < minY then
-                                minY = points[i].Y
-                            end
-                        end
-                        nameY = minY - 25 -- Выше бокса
+            if ESP.Settings.ESPMode.Value == "3D" then
+                local points = get3DBoxPoints(character, camera)
+                if points then
+                    local minY = math.huge
+                    local maxY = -math.huge
+                    for i = 1, 8 do
+                        if points[i].Y < minY then minY = points[i].Y end
+                        if points[i].Y > maxY then maxY = points[i].Y end
+                    end
+                    
+                    if ESP.Settings.BoxSettings.InfoPosition.Value == "Top" then
+                        -- Информация сверху: под именем
+                        nameY = minY - 30
+                        countryY = nameY + 20
+                        deviceY = countryY + 15
                     else
-                        nameY = rootPos.Y - 50
+                        -- Информация снизу: под боксом
+                        nameY = maxY + 10
+                        countryY = nameY + 15
+                        deviceY = countryY + 15
                     end
                 else
-                    local size = getCharacterSize(character)
-                    local headPos = camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, size.Y/2, 0))
-                    nameY = headPos.Y - 35 -- Значительно выше для 2D
+                    nameY = rootPos.Y - 40
+                    countryY = nameY + 15
+                    deviceY = countryY + 15
                 end
+            else
+                local headPos = camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, 3.5, 0))
+                local feetPos = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3.5, 0))
                 
-                if nameY < 20 then nameY = 20 end
+                if ESP.Settings.BoxSettings.InfoPosition.Value == "Top" then
+                    -- Информация сверху: под именем
+                    nameY = headPos.Y - 40
+                    countryY = nameY + 20
+                    deviceY = countryY + 15
+                else
+                    -- Информация снизу: под боксом
+                    nameY = feetPos.Y + 10
+                    countryY = nameY + 15
+                    deviceY = countryY + 15
+                end
+            end
+
+            -- Проверяем, чтобы текст не уходил за пределы экрана
+            local screenHeight = Core.Services.UserInputService:GetMouseLocation().Y * 2
+            if nameY < 20 then nameY = 20 end
+            if countryY < 40 then countryY = 40 end
+            if deviceY < 60 then deviceY = 60 end
+            if nameY > screenHeight - 60 then nameY = screenHeight - 60 end
+            if countryY > screenHeight - 40 then countryY = screenHeight - 40 end
+            if deviceY > screenHeight - 20 then deviceY = screenHeight - 20 end
+
+            -- Отображение имени
+            if ESP.Settings.BoxSettings.ShowNames.Value then
+                local nameColor = ESP.Settings.BoxSettings.GradientEnabled.Value and color or baseColor
                 
-                esp.NameDrawing.Text = player.Name
-                esp.NameDrawing.Position = Vector2.new(rootPos.X, nameY)
-                esp.NameDrawing.Color = textColor
-                esp.NameDrawing.Visible = true
-                textYOffset = nameY + 15
+                if ESP.Settings.TextSettings.TextMethod.Value == "Drawing" then
+                    esp.NameDrawing.Text = player.Name
+                    esp.NameDrawing.Position = Vector2.new(rootPos.X, nameY)
+                    esp.NameDrawing.Color = nameColor
+                    esp.NameDrawing.Visible = true
+                    if esp.NameGui then esp.NameGui.Visible = false end
+                elseif ESP.Settings.TextSettings.TextMethod.Value == "GUI" and esp.NameGui then
+                    esp.NameGui.Text = player.Name
+                    esp.NameGui.Position = UDim2.new(0, rootPos.X - 100, 0, nameY)
+                    esp.NameGui.TextColor3 = nameColor
+                    esp.NameGui.Visible = true
+                    esp.NameDrawing.Visible = false
+                end
             else
                 esp.NameDrawing.Visible = false
+                if esp.NameGui then esp.NameGui.Visible = false end
             end
-            
-            -- Страна (посередине или снизу)
-            if ESP.Settings.ShowCountry.Value and esp.LastCountry then
-                local countryY = textYOffset
-                if countryY > 0 then
+
+            -- Отображение страны
+            if ESP.Settings.BoxSettings.ShowCountry.Value then
+                local countryText = getPlayerCountry(player)
+                local infoColor = ESP.Settings.BoxSettings.GradientEnabled.Value and color or Color3.fromRGB(200, 200, 200)
+                
+                if ESP.Settings.TextSettings.TextMethod.Value == "Drawing" then
+                    esp.CountryDrawing.Text = countryText
                     esp.CountryDrawing.Position = Vector2.new(rootPos.X, countryY)
-                    esp.CountryDrawing.Color = textColor
+                    esp.CountryDrawing.Color = infoColor
                     esp.CountryDrawing.Visible = true
-                    textYOffset = countryY + 15
-                else
+                    if esp.CountryGui then esp.CountryGui.Visible = false end
+                elseif ESP.Settings.TextSettings.TextMethod.Value == "GUI" and esp.CountryGui then
+                    esp.CountryGui.Text = countryText
+                    esp.CountryGui.Position = UDim2.new(0, rootPos.X - 100, 0, countryY)
+                    esp.CountryGui.TextColor3 = infoColor
+                    esp.CountryGui.Visible = true
                     esp.CountryDrawing.Visible = false
                 end
             else
                 esp.CountryDrawing.Visible = false
+                if esp.CountryGui then esp.CountryGui.Visible = false end
             end
-            
-            -- Устройство (в самом низу)
-            if ESP.Settings.ShowDevice.Value and esp.LastDevice then
-                local deviceY = textYOffset
-                if deviceY > 0 then
+
+            -- Отображение устройства
+            if ESP.Settings.BoxSettings.ShowDevice.Value then
+                local deviceText = getPlayerDevice(player)
+                local infoColor = ESP.Settings.BoxSettings.GradientEnabled.Value and color or Color3.fromRGB(200, 200, 200)
+                
+                if ESP.Settings.TextSettings.TextMethod.Value == "Drawing" then
+                    esp.DeviceDrawing.Text = deviceText
                     esp.DeviceDrawing.Position = Vector2.new(rootPos.X, deviceY)
-                    esp.DeviceDrawing.Color = textColor
+                    esp.DeviceDrawing.Color = infoColor
                     esp.DeviceDrawing.Visible = true
-                else
+                    if esp.DeviceGui then esp.DeviceGui.Visible = false end
+                elseif ESP.Settings.TextSettings.TextMethod.Value == "GUI" and esp.DeviceGui then
+                    esp.DeviceGui.Text = deviceText
+                    esp.DeviceGui.Position = UDim2.new(0, rootPos.X - 100, 0, deviceY)
+                    esp.DeviceGui.TextColor3 = infoColor
+                    esp.DeviceGui.Visible = true
                     esp.DeviceDrawing.Visible = false
                 end
             else
                 esp.DeviceDrawing.Visible = false
+                if esp.DeviceGui then esp.DeviceGui.Visible = false end
             end
         end
     end
@@ -1314,30 +1374,6 @@ function Visuals.Init(UI, Core, notify)
                 end
             }, 'UseTeamColorESP')
             
-            UI.Sections.ESP:Toggle({
-                Name = "Show Country",
-                Default = ESP.Settings.ShowCountry.Default,
-                Callback = function(value)
-                    ESP.Settings.ShowCountry.Value = value
-                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
-                        ESP.LastNotificationTime = tick()
-                        notify("ESP", "Show Country " .. (value and "Enabled" or "Disabled"), true)
-                    end
-                end
-            }, 'ShowCountryESP')
-            
-            UI.Sections.ESP:Toggle({
-                Name = "Show Device",
-                Default = ESP.Settings.ShowDevice.Default,
-                Callback = function(value)
-                    ESP.Settings.ShowDevice.Value = value
-                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
-                        ESP.LastNotificationTime = tick()
-                        notify("ESP", "Show Device " .. (value and "Enabled" or "Disabled"), true)
-                    end
-                end
-            }, 'ShowDeviceESP')
-            
             UI.Sections.ESP:Divider()
             
             -- COLOR SETTINGS
@@ -1494,6 +1530,48 @@ function Visuals.Init(UI, Core, notify)
             
             UI.Sections.ESP:Divider()
             
+            -- INFO SETTINGS (НОВОЕ)
+            UI.Sections.ESP:Header({ Name = "Info Settings" })
+            
+            UI.Sections.ESP:Toggle({
+                Name = "Show Country",
+                Default = ESP.Settings.BoxSettings.ShowCountry.Default,
+                Callback = function(value)
+                    ESP.Settings.BoxSettings.ShowCountry.Value = value
+                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                        ESP.LastNotificationTime = tick()
+                        notify("ESP", "Country display " .. (value and "Enabled" or "Disabled"), true)
+                    end
+                end
+            }, 'ShowCountry')
+            
+            UI.Sections.ESP:Toggle({
+                Name = "Show Device",
+                Default = ESP.Settings.BoxSettings.ShowDevice.Default,
+                Callback = function(value)
+                    ESP.Settings.BoxSettings.ShowDevice.Value = value
+                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                        ESP.LastNotificationTime = tick()
+                        notify("ESP", "Device display " .. (value and "Enabled" or "Disabled"), true)
+                    end
+                end
+            }, 'ShowDevice')
+            
+            UI.Sections.ESP:Dropdown({
+                Name = "Info Position",
+                Options = {"Bottom", "Top"},
+                Default = ESP.Settings.BoxSettings.InfoPosition.Default,
+                Callback = function(value)
+                    ESP.Settings.BoxSettings.InfoPosition.Value = value
+                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                        ESP.LastNotificationTime = tick()
+                        notify("ESP", "Info Position set to: " .. value, true)
+                    end
+                end
+            }, 'InfoPosition')
+            
+            UI.Sections.ESP:Divider()
+            
             -- TEXT SETTINGS
             UI.Sections.ESP:Header({ Name = "Text Settings" })
             
@@ -1519,9 +1597,11 @@ function Visuals.Init(UI, Core, notify)
                     ESP.Settings.TextSettings.TextSize.Value = value
                     for _, esp in pairs(ESP.Elements) do
                         esp.NameDrawing.Size = value
-                        esp.CountryDrawing.Size = value
-                        esp.DeviceDrawing.Size = value
+                        esp.CountryDrawing.Size = math.floor(value * 0.9)
+                        esp.DeviceDrawing.Size = math.floor(value * 0.9)
                         if esp.NameGui then esp.NameGui.TextSize = value end
+                        if esp.CountryGui then esp.CountryGui.TextSize = math.floor(value * 0.9) end
+                        if esp.DeviceGui then esp.DeviceGui.TextSize = math.floor(value * 0.9) end
                     end
                     if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
                         ESP.LastNotificationTime = tick()
