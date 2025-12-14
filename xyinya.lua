@@ -210,28 +210,29 @@ function Visuals.Init(UI, Core, notify)
             Instance.new("UICorner", buttonFrame).CornerRadius = UDim.new(0, 16)
         end
         
-        -- Отдельный фрейм для иконки (внутри основного фрейма)
+        -- Отдельный фрейм для иконки (размер 34x34, центрирован)
         local iconContainer = Instance.new("Frame")
         iconContainer.Name = "IconContainer"
-        iconContainer.Size = UDim2.new(0, 44, 0, 44) -- Размер контейнера
-        iconContainer.Position = UDim2.new(0.5, -22, 0.5, -22) -- Центрируем (22 = 44/2)
-        iconContainer.BackgroundColor3 = Color3.fromRGB(30, 45, 75) -- Темнее чем фон
-        iconContainer.BackgroundTransparency = 0.4 -- Менее прозрачный чем фон
+        iconContainer.Size = UDim2.new(0, 34, 0, 34) -- Новый размер 34x34
+        -- Центрирование: 17 = 34/2
+        iconContainer.Position = UDim2.new(0.5, -17, 0.5, -17) -- Идеально по центру
+        iconContainer.BackgroundColor3 = Color3.fromRGB(25, 40, 70) -- Темнее чем фон
+        iconContainer.BackgroundTransparency = 0.2 -- Менее прозрачный (0.2 вместо 0.4)
         iconContainer.BorderSizePixel = 0
         iconContainer.Parent = buttonFrame
         
         local iconCorner = Instance.new("UICorner")
-        iconCorner.CornerRadius = UDim.new(0, 10)
+        iconCorner.CornerRadius = UDim.new(0, 8) -- Меньше скругление для меньшего размера
         iconCorner.Parent = iconContainer
         
         -- Создаем новую иконку внутри контейнера
         local newIcon = Instance.new("ImageLabel")
         newIcon.Name = "LiquidGlassIcon"
-        newIcon.Size = UDim2.new(0, 28, 0, 28)
-        newIcon.Position = UDim2.new(0.5, -14, 0.5, -14)
+        newIcon.Size = UDim2.new(0, 24, 0, 24) -- Чуть меньше для 34x34 контейнера
+        newIcon.Position = UDim2.new(0.5, -12, 0.5, -12) -- Центрируем в контейнере
         newIcon.BackgroundTransparency = 1
         newIcon.Image = "rbxassetid://73279554401260"
-        newIcon.ImageColor3 = Color3.fromRGB(220, 230, 255) -- Светлая иконка на темном фоне
+        newIcon.ImageColor3 = Color3.fromRGB(240, 245, 255) -- Яркая иконка на темном фоне
         newIcon.Parent = iconContainer
         
         -- Локальная переменная для анимации
@@ -243,20 +244,20 @@ function Visuals.Init(UI, Core, notify)
             
             isAnimating = true
             
-            -- Анимация нажатия (уменьшение размера и прозрачности)
+            -- Анимация нажатия (уменьшение размера и увеличение прозрачности)
             local originalSize = iconContainer.Size
             local originalPos = iconContainer.Position
             
-            -- Эффект "вдавливания"
+            -- Эффект "вдавливания" - равномерное уменьшение
             for i = 0, 1, 0.1 do
                 if State.MenuButton.CurrentDesign ~= "Liquid Glass" then break end
-                local scale = 1 - (i * 0.1) -- Уменьшение на 10%
+                local scale = 1 - (i * 0.15) -- Уменьшение на 15%
                 iconContainer.Size = UDim2.new(0, originalSize.X.Offset * scale, 0, originalSize.Y.Offset * scale)
                 iconContainer.Position = UDim2.new(
                     0.5, -originalSize.X.Offset * scale / 2,
                     0.5, -originalSize.Y.Offset * scale / 2
                 )
-                iconContainer.BackgroundTransparency = 0.4 + (i * 0.2) -- Увеличение прозрачности
+                iconContainer.BackgroundTransparency = 0.2 + (i * 0.3) -- Увеличение прозрачности
                 task.wait(0.01)
             end
             
@@ -265,20 +266,20 @@ function Visuals.Init(UI, Core, notify)
             -- Возвращаем к исходному состоянию
             for i = 0, 1, 0.05 do
                 if State.MenuButton.CurrentDesign ~= "Liquid Glass" then break end
-                local scale = 0.9 + (i * 0.1) -- Возврат к 100%
+                local scale = 0.85 + (i * 0.15) -- Возврат к 100%
                 iconContainer.Size = UDim2.new(0, originalSize.X.Offset * scale, 0, originalSize.Y.Offset * scale)
                 iconContainer.Position = UDim2.new(
                     0.5, -originalSize.X.Offset * scale / 2,
                     0.5, -originalSize.Y.Offset * scale / 2
                 )
-                iconContainer.BackgroundTransparency = 0.6 - (i * 0.2) -- Возврат прозрачности
+                iconContainer.BackgroundTransparency = 0.5 - (i * 0.3) -- Возврат прозрачности
                 task.wait(0.01)
             end
             
             -- Финишная коррекция
             iconContainer.Size = originalSize
             iconContainer.Position = originalPos
-            iconContainer.BackgroundTransparency = 0.4
+            iconContainer.BackgroundTransparency = 0.2
             
             isAnimating = false
         end
