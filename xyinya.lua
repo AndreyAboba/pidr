@@ -1,5 +1,5 @@
 local Visuals = {}
-print('4')
+print('5')
 
 function Visuals.Init(UI, Core, notify)
     local State = {
@@ -50,11 +50,13 @@ function Visuals.Init(UI, Core, notify)
                 ShowNames = { Value = true, Default = true },
                 ShowCountry = { Value = true, Default = true },
                 ShowDevice = { Value = true, Default = true },
-                ShowDribbleCD = { Value = true, Default = true }, -- Новое: показ кулдауна дриблинга
-                ShowTackleCD = { Value = true, Default = true }, -- Новое: показ кулдауна текла
+                ShowDribbleCD = { Value = true, Default = true },
+                ShowTackleCD = { Value = true, Default = true },
+                ShowDribbleBar = { Value = true, Default = true }, -- Новое: бар кулдауна дриблинга
+                ShowTackleBar = { Value = true, Default = true }, -- Новое: бар кулдауна текла
+                DribbleBarColor = { Value = Color3.fromRGB(255, 165, 0), Default = Color3.fromRGB(255, 165, 0) }, -- Оранжевый
+                TackleBarColor = { Value = Color3.fromRGB(255, 50, 50), Default = Color3.fromRGB(255, 50, 50) }, -- Красный
                 InfoPosition = { Value = "Bottom", Default = "Bottom" },
-                HPBarStyle = { Value = "Default", Default = "Default" }, -- Новое: стиль HP бара
-                HPBarColor = { Value = Color3.fromRGB(0, 255, 0), Default = Color3.fromRGB(0, 255, 0) }, -- Новое: цвет HP бара
                 GradientEnabled = { Value = false, Default = false },
                 FilledEnabled = { Value = false, Default = false },
                 FilledTransparency = { Value = 0.5, Default = 0.5 },
@@ -64,7 +66,7 @@ function Visuals.Init(UI, Core, notify)
                 TextSize = { Value = 14, Default = 14 },
                 TextFont = { Value = Drawing.Fonts.Plex, Default = Drawing.Fonts.Plex },
                 TextMethod = { Value = "Drawing", Default = "Drawing" },
-                TextScale = { Value = 1.0, Default = 1.0 } -- Новое: масштабирование текста
+                TextScale = { Value = 1.0, Default = 1.0 }
             }
         },
         Elements = {},
@@ -74,10 +76,24 @@ function Visuals.Init(UI, Core, notify)
         UpdateInterval = 1 / 60,
         LastUpdateTime = 0,
         
-        -- Новые данные для игроков
+        -- Данные для игроков
         PlayerData = {
-            -- Структура: [player] = { dribbleCD = 0, tackleCD = 0, lastUpdate = 0 }
-        }
+            -- Структура: [player] = { 
+            --   dribbleCD = 0, -- текущий кулдаун
+            --   tackleCD = 0, 
+            --   lastDribbleTime = 0, -- когда последний раз видели дриблинг
+            --   lastTackleTime = 0,
+            --   isDribbling = false,
+            --   isTackling = false,
+            --   lastUpdate = 0 
+            -- }
+        },
+        
+        -- Анимации для детекта
+        DribbleAnimationIds = {
+            "rbxassetid://", -- Здесь добавьте ID анимаций дриблинга из вашего скрипта
+        },
+        TackleAnimationId = "rbxassetid://14317040670" -- Из вашего скрипта
     }
 
     local Cache = { 
@@ -722,7 +738,66 @@ function Visuals.Init(UI, Core, notify)
         end
     end
 
-    -- Функция для получения кулдаунов игрока
+    -- Функция для проверки анимации дриблинга
+    local function isPlayerDribbling(player)
+        if not player or not player.Character then return false end
+        
+        local humanoid = player.Character:FindFirstChild("Humanoid")
+        if not humanoid then return false end
+        
+        local animator = humanoid:FindFirstChild("Animator")
+        if not animator then return false end
+        
+        -- Проверяем все воспроизводимые анимации
+        for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+            if track.Animation then
+                local animId = track.Animation.AnimationId
+                -- Здесь нужно добавить ID анимаций дриблинга из вашего скрипта
+                -- Например: if string.find(animId, "dribble") or string.find(animId, "Dribble") then
+                -- Временно используем простую проверку
+                if track.IsPlaying and track.Length > 0 then
+                    -- Проверяем по имени трека (может содержать "Dribble")
+                    if string.find(string.lower(track.Name), "dribble") or 
+                       string.find(string.lower(animId), "dribble") then
+                        return true
+                    end
+                end
+            end
+        end
+        
+        return false
+    end
+
+    -- Функция для проверки анимации текла
+    local function isPlayerTackling(player)
+        if not player or not player.Character then return false end
+        
+        local humanoid = player.Character:FindFirstChild("Humanoid")
+        if not humanoid then return false end
+        
+        local animator = humanoid:FindFirstChild("Animator")
+        if not animator then return false end
+        
+        -- Проверяем все воспроизводимые анимации
+        for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+            if track.Animation then
+                local animId = track.Animation.AnimationId
+                -- Проверяем конкретный ID текла из вашего скрипта
+                if animId == ESP.TackleAnimationId then
+                    return true
+                end
+                -- Также проверяем по имени
+                if string.find(string.lower(track.Name), "tackle") or 
+                   string.find(string.lower(animId), "tackle") then
+                    return true
+                end
+            end
+        end
+        
+        return false
+    end
+
+    -- Функция для получения и обновления кулдаунов игрока
     local function getPlayerCooldowns(player)
         local currentTime = tick()
         local playerData = ESP.PlayerData[player]
@@ -731,9 +806,11 @@ function Visuals.Init(UI, Core, notify)
             playerData = {
                 dribbleCD = 0,
                 tackleCD = 0,
-                lastUpdate = currentTime,
+                lastDribbleTime = 0,
+                lastTackleTime = 0,
                 isDribbling = false,
-                isTackling = false
+                isTackling = false,
+                lastUpdate = currentTime
             }
             ESP.PlayerData[player] = playerData
         end
@@ -750,18 +827,30 @@ function Visuals.Init(UI, Core, notify)
             playerData.tackleCD = math.max(0, playerData.tackleCD - deltaTime)
         end
         
-        -- Проверяем состояния анимаций (здесь должна быть интеграция с вашим скриптом AutoDribble)
-        local character = player.Character
-        if character then
-            -- Проверка дриблинга (нужно интегрировать с вашим скриптом)
-            local humanoid = character:FindFirstChild("Humanoid")
-            if humanoid then
-                local animator = humanoid:FindFirstChild("Animator")
-                if animator then
-                    -- Здесь должна быть проверка анимаций дриблинга
-                    -- Для примера: если обнаружена анимация дриблинга, устанавливаем кулдаун
-                end
-            end
+        -- Проверяем состояния анимаций
+        local isDribblingNow = isPlayerDribbling(player)
+        local isTacklingNow = isPlayerTackling(player)
+        
+        -- Обновляем кулдаун дриблинга
+        if isDribblingNow and not playerData.isDribbling then
+            -- Начался дриблинг
+            playerData.isDribbling = true
+            playerData.lastDribbleTime = currentTime
+        elseif not isDribblingNow and playerData.isDribbling then
+            -- Закончился дриблинг, устанавливаем кулдаун 3.5 секунды
+            playerData.isDribbling = false
+            playerData.dribbleCD = 3.5
+        end
+        
+        -- Обновляем кулдаун текла
+        if isTacklingNow and not playerData.isTackling then
+            -- Начался телк
+            playerData.isTackling = true
+            playerData.lastTackleTime = currentTime
+        elseif not isTacklingNow and playerData.isTackling then
+            -- Закончился телк, устанавливаем кулдаун 4 секунды
+            playerData.isTackling = false
+            playerData.tackleCD = 4.0
         end
         
         return playerData
@@ -781,20 +870,20 @@ function Visuals.Init(UI, Core, notify)
         if humanoid then
             -- Для 2D: высота больше
             if ESP.Settings.ESPMode.Value == "2D" then
-                local height = humanoid.HipHeight * 3.2 + 4.0 -- Еще выше
-                local width = height * 0.4 -- Нормальная пропорция
+                local height = humanoid.HipHeight * 3.2 + 4.0
+                local width = height * 0.4
                 return Vector3.new(width, height, 1)
             else
                 -- Для 3D: немного ниже
-                local height = humanoid.HipHeight * 1.8 + 2.8 -- Немного ниже чем раньше
+                local height = humanoid.HipHeight * 1.8 + 2.8
                 return Vector3.new(2.8, height, 2.8)
             end
         end
         -- Размеры по умолчанию
         if ESP.Settings.ESPMode.Value == "2D" then
-            return Vector3.new(4.0, 10, 1) -- Выше для 2D
+            return Vector3.new(4.0, 10, 1)
         else
-            return Vector3.new(3, 6, 3) -- Немного ниже для 3D
+            return Vector3.new(3, 6, 3)
         end
     end
 
@@ -808,7 +897,7 @@ function Visuals.Init(UI, Core, notify)
         local points = {}
         
         -- Смещаем бокс ниже по Y (отрицательное значение)
-        local yOffset = Vector3.new(0, -0.5, 0) -- Смещаем немного ниже
+        local yOffset = Vector3.new(0, -0.5, 0)
         
         -- 8 углов куба со смещением по Y
         local corners = {
@@ -863,17 +952,11 @@ function Visuals.Init(UI, Core, notify)
             Box3DLines = {},
             Filled = supportsQuad and Drawing.new("Quad") or Drawing.new("Square"),
             NameDrawing = Drawing.new("Text"),
-            CountryDrawing = Drawing.new("Text"),
-            DeviceDrawing = Drawing.new("Text"),
-            DribbleCDDrawing = Drawing.new("Text"), -- Новое: текст кулдауна дриблинга
-            TackleCDDrawing = Drawing.new("Text"), -- Новое: текст кулдауна текла
+            InfoDrawing = Drawing.new("Text"), -- Объединенная информация
             NameGui = nil,
-            CountryGui = nil,
-            DeviceGui = nil,
-            DribbleCDGui = nil, -- Новое: GUI для кулдауна дриблинга
-            TackleCDGui = nil, -- Новое: GUI для кулдауна текла
-            HPBarLeft = nil, -- Новое: левый HP бар
-            HPBarRight = nil, -- Новое: правый HP бар
+            InfoGui = nil,
+            DribbleBar = nil, -- Бар кулдауна дриблинга
+            TackleBar = nil, -- Бар кулдауна текла
             LastPosition = nil,
             LastVisible = false,
             LastIsSameTeam = nil
@@ -904,33 +987,12 @@ function Visuals.Init(UI, Core, notify)
         esp.NameDrawing.Outline = true
         esp.NameDrawing.Visible = false
 
-        -- Настройки текста для страны
-        esp.CountryDrawing.Size = math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.8)
-        esp.CountryDrawing.Font = ESP.Settings.TextSettings.TextFont.Value
-        esp.CountryDrawing.Center = true
-        esp.CountryDrawing.Outline = true
-        esp.CountryDrawing.Visible = false
-
-        -- Настройки текста для устройства
-        esp.DeviceDrawing.Size = math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.8)
-        esp.DeviceDrawing.Font = ESP.Settings.TextSettings.TextFont.Value
-        esp.DeviceDrawing.Center = true
-        esp.DeviceDrawing.Outline = true
-        esp.DeviceDrawing.Visible = false
-
-        -- Настройки текста для кулдауна дриблинга
-        esp.DribbleCDDrawing.Size = math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.7)
-        esp.DribbleCDDrawing.Font = ESP.Settings.TextSettings.TextFont.Value
-        esp.DribbleCDDrawing.Center = true
-        esp.DribbleCDDrawing.Outline = true
-        esp.DribbleCDDrawing.Visible = false
-
-        -- Настройки текста для кулдауна текла
-        esp.TackleCDDrawing.Size = math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.7)
-        esp.TackleCDDrawing.Font = ESP.Settings.TextSettings.TextFont.Value
-        esp.TackleCDDrawing.Center = true
-        esp.TackleCDDrawing.Outline = true
-        esp.TackleCDDrawing.Visible = false
+        -- Настройки текста для информации
+        esp.InfoDrawing.Size = math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.8)
+        esp.InfoDrawing.Font = ESP.Settings.TextSettings.TextFont.Value
+        esp.InfoDrawing.Center = true
+        esp.InfoDrawing.Outline = true
+        esp.InfoDrawing.Visible = false
 
         -- Создаем GUI элементы
         local function createGuiElement(textSize, name)
@@ -948,48 +1010,28 @@ function Visuals.Init(UI, Core, notify)
             return label
         end
 
-        -- Создаем GUI элементы для кулдаунов
-        local function createCDGuiElement(textSize, name)
-            local label = Instance.new("TextLabel")
-            label.Size = UDim2.new(0, 60, 0, 18)
-            label.BackgroundTransparency = 1
-            label.TextSize = textSize
-            label.Font = Enum.Font.GothamBold
-            label.TextStrokeTransparency = 0
-            label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-            label.TextXAlignment = Enum.TextXAlignment.Center
-            label.Visible = false
-            label.Parent = ESPGui
-            return label
-        end
-
-        -- Создаем HP бар
-        local function createHPBar(isLeft)
+        -- Создаем бар кулдауна
+        local function createCDBar(color, name)
             local frame = Instance.new("Frame")
-            frame.Size = UDim2.new(0, 4, 0, 0)
-            frame.BackgroundColor3 = ESP.Settings.BoxSettings.HPBarColor.Value
+            frame.Size = UDim2.new(0, 40, 0, 4) -- Ширина 40, высота 4
+            frame.BackgroundColor3 = color
             frame.BorderSizePixel = 0
             frame.Visible = false
             frame.Parent = ESPGui
             
-            if isLeft then
-                frame.AnchorPoint = Vector2.new(1, 0)
-            end
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0, 2)
+            corner.Parent = frame
             
             return frame
         end
 
         esp.NameGui = createGuiElement(ESP.Settings.TextSettings.TextSize.Value, "Name")
-        esp.CountryGui = createGuiElement(math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.8), "Country")
-        esp.DeviceGui = createGuiElement(math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.8), "Device")
-        esp.DribbleCDGui = createCDGuiElement(math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.7), "DribbleCD")
-        esp.TackleCDGui = createCDGuiElement(math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.7), "TackleCD")
+        esp.InfoGui = createGuiElement(math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.8), "Info")
         
-        -- Создаем HP бары
-        if ESP.Settings.BoxSettings.HPBarStyle.Value ~= "Default" then
-            esp.HPBarLeft = createHPBar(true)
-            esp.HPBarRight = createHPBar(false)
-        end
+        -- Создаем бары кулдаунов
+        esp.DribbleBar = createCDBar(ESP.Settings.BoxSettings.DribbleBarColor.Value, "DribbleBar")
+        esp.TackleBar = createCDBar(ESP.Settings.BoxSettings.TackleBarColor.Value, "TackleBar")
 
         ESP.Elements[player] = esp
     end
@@ -1000,18 +1042,12 @@ function Visuals.Init(UI, Core, notify)
         for _, line in pairs(ESP.Elements[player].Box3DLines or {}) do line:Remove() end
         ESP.Elements[player].Filled:Remove()
         ESP.Elements[player].NameDrawing:Remove()
-        ESP.Elements[player].CountryDrawing:Remove()
-        ESP.Elements[player].DeviceDrawing:Remove()
-        ESP.Elements[player].DribbleCDDrawing:Remove()
-        ESP.Elements[player].TackleCDDrawing:Remove()
+        ESP.Elements[player].InfoDrawing:Remove()
         
         if ESP.Elements[player].NameGui then ESP.Elements[player].NameGui:Destroy() end
-        if ESP.Elements[player].CountryGui then ESP.Elements[player].CountryGui:Destroy() end
-        if ESP.Elements[player].DeviceGui then ESP.Elements[player].DeviceGui:Destroy() end
-        if ESP.Elements[player].DribbleCDGui then ESP.Elements[player].DribbleCDGui:Destroy() end
-        if ESP.Elements[player].TackleCDGui then ESP.Elements[player].TackleCDGui:Destroy() end
-        if ESP.Elements[player].HPBarLeft then ESP.Elements[player].HPBarLeft:Destroy() end
-        if ESP.Elements[player].HPBarRight then ESP.Elements[player].HPBarRight:Destroy() end
+        if ESP.Elements[player].InfoGui then ESP.Elements[player].InfoGui:Destroy() end
+        if ESP.Elements[player].DribbleBar then ESP.Elements[player].DribbleBar:Destroy() end
+        if ESP.Elements[player].TackleBar then ESP.Elements[player].TackleBar:Destroy() end
         
         ESP.Elements[player] = nil
         Cache.PlayerCache[player] = nil
@@ -1034,17 +1070,11 @@ function Visuals.Init(UI, Core, notify)
                 for _, line in pairs(esp.Box3DLines) do line.Visible = false end
                 esp.Filled.Visible = false
                 esp.NameDrawing.Visible = false
-                esp.CountryDrawing.Visible = false
-                esp.DeviceDrawing.Visible = false
-                esp.DribbleCDDrawing.Visible = false
-                esp.TackleCDDrawing.Visible = false
+                esp.InfoDrawing.Visible = false
                 if esp.NameGui then esp.NameGui.Visible = false end
-                if esp.CountryGui then esp.CountryGui.Visible = false end
-                if esp.DeviceGui then esp.DeviceGui.Visible = false end
-                if esp.DribbleCDGui then esp.DribbleCDGui.Visible = false end
-                if esp.TackleCDGui then esp.TackleCDGui.Visible = false end
-                if esp.HPBarLeft then esp.HPBarLeft.Visible = false end
-                if esp.HPBarRight then esp.HPBarRight.Visible = false end
+                if esp.InfoGui then esp.InfoGui.Visible = false end
+                if esp.DribbleBar then esp.DribbleBar.Visible = false end
+                if esp.TackleBar then esp.TackleBar.Visible = false end
                 esp.LastVisible = false
             end
             return
@@ -1076,17 +1106,11 @@ function Visuals.Init(UI, Core, notify)
                     for _, line in pairs(esp.Box3DLines) do line.Visible = false end
                     esp.Filled.Visible = false
                     esp.NameDrawing.Visible = false
-                    esp.CountryDrawing.Visible = false
-                    esp.DeviceDrawing.Visible = false
-                    esp.DribbleCDDrawing.Visible = false
-                    esp.TackleCDDrawing.Visible = false
+                    esp.InfoDrawing.Visible = false
                     if esp.NameGui then esp.NameGui.Visible = false end
-                    if esp.CountryGui then esp.CountryGui.Visible = false end
-                    if esp.DeviceGui then esp.DeviceGui.Visible = false end
-                    if esp.DribbleCDGui then esp.DribbleCDGui.Visible = false end
-                    if esp.TackleCDGui then esp.TackleCDGui.Visible = false end
-                    if esp.HPBarLeft then esp.HPBarLeft.Visible = false end
-                    if esp.HPBarRight then esp.HPBarRight.Visible = false end
+                    if esp.InfoGui then esp.InfoGui.Visible = false end
+                    if esp.DribbleBar then esp.DribbleBar.Visible = false end
+                    if esp.TackleBar then esp.TackleBar.Visible = false end
                     esp.LastVisible = false
                 end
                 continue
@@ -1100,17 +1124,11 @@ function Visuals.Init(UI, Core, notify)
                     for _, line in pairs(esp.Box3DLines) do line.Visible = false end
                     esp.Filled.Visible = false
                     esp.NameDrawing.Visible = false
-                    esp.CountryDrawing.Visible = false
-                    esp.DeviceDrawing.Visible = false
-                    esp.DribbleCDDrawing.Visible = false
-                    esp.TackleCDDrawing.Visible = false
+                    esp.InfoDrawing.Visible = false
                     if esp.NameGui then esp.NameGui.Visible = false end
-                    if esp.CountryGui then esp.CountryGui.Visible = false end
-                    if esp.DeviceGui then esp.DeviceGui.Visible = false end
-                    if esp.DribbleCDGui then esp.DribbleCDGui.Visible = false end
-                    if esp.TackleCDGui then esp.TackleCDGui.Visible = false end
-                    if esp.HPBarLeft then esp.HPBarLeft.Visible = false end
-                    if esp.HPBarRight then esp.HPBarRight.Visible = false end
+                    if esp.InfoGui then esp.InfoGui.Visible = false end
+                    if esp.DribbleBar then esp.DribbleBar.Visible = false end
+                    if esp.TackleBar then esp.TackleBar.Visible = false end
                     esp.LastVisible = false
                 end
                 continue
@@ -1152,8 +1170,10 @@ function Visuals.Init(UI, Core, notify)
 
             -- Получаем данные игрока
             local playerData = getPlayerCooldowns(player)
-            local dribbleCDText = formatTime(playerData.dribbleCD)
-            local tackleCDText = formatTime(playerData.tackleCD)
+            local dribbleCD = playerData.dribbleCD
+            local tackleCD = playerData.tackleCD
+            local dribbleCDText = formatTime(dribbleCD)
+            local tackleCDText = formatTime(tackleCD)
 
             if ESP.Settings.ESPMode.Value == "3D" then
                 -- 3D ESP
@@ -1189,7 +1209,7 @@ function Visuals.Init(UI, Core, notify)
                     local feetPos = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3.5, 0))
                     
                     local height = math.abs(headPos.Y - feetPos.Y)
-                    local width = height * 0.4 -- Нормальная пропорция (40%)
+                    local width = height * 0.4
                     
                     local topLeft = Vector2.new(rootPos.X - width/2, headPos.Y)
                     local topRight = Vector2.new(rootPos.X + width/2, headPos.Y)
@@ -1225,73 +1245,43 @@ function Visuals.Init(UI, Core, notify)
                     else
                         esp.Filled.Visible = false
                     end
-                    
-                    -- Отображение HP бара
-                    if ESP.Settings.BoxSettings.HPBarStyle.Value ~= "Default" and esp.HPBarLeft and esp.HPBarRight then
-                        local hp = humanoid.Health
-                        local maxHp = humanoid.MaxHealth
-                        local hpPercent = hp / maxHp
-                        local hpBarHeight = height * 0.8
-                        local hpBarYOffset = hpBarHeight * (1 - hpPercent)
-                        
-                        if ESP.Settings.BoxSettings.HPBarStyle.Value == "Left" or ESP.Settings.BoxSettings.HPBarStyle.Value == "Both" then
-                            esp.HPBarLeft.Position = UDim2.new(0, topLeft.X - 6, 0, topLeft.Y + hpBarYOffset)
-                            esp.HPBarLeft.Size = UDim2.new(0, 4, 0, hpBarHeight * hpPercent)
-                            esp.HPBarLeft.BackgroundColor3 = Color3.fromRGB(
-                                math.floor(255 * (1 - hpPercent)),
-                                math.floor(255 * hpPercent),
-                                0
-                            )
-                            esp.HPBarLeft.Visible = true
-                        end
-                        
-                        if ESP.Settings.BoxSettings.HPBarStyle.Value == "Right" or ESP.Settings.BoxSettings.HPBarStyle.Value == "Both" then
-                            esp.HPBarRight.Position = UDim2.new(0, topRight.X + 2, 0, topLeft.Y + hpBarYOffset)
-                            esp.HPBarRight.Size = UDim2.new(0, 4, 0, hpBarHeight * hpPercent)
-                            esp.HPBarRight.BackgroundColor3 = Color3.fromRGB(
-                                math.floor(255 * (1 - hpPercent)),
-                                math.floor(255 * hpPercent),
-                                0
-                            )
-                            esp.HPBarRight.Visible = true
-                        end
-                    end
                 else
                     for _, line in pairs(esp.BoxLines) do line.Visible = false end
                     esp.Filled.Visible = false
-                    if esp.HPBarLeft then esp.HPBarLeft.Visible = false end
-                    if esp.HPBarRight then esp.HPBarRight.Visible = false end
                 end
             end
 
             -- Расчет позиций для текстовой информации
-            local nameY, infoY
+            local nameY, infoY, barsY
             
-            -- Масштаб текста в зависимости от расстояния
+            -- Масштаб в зависимости от расстояния
             local distance = (camera.CFrame.Position - rootPart.Position).Magnitude
             local textScale = calculateTextScale(distance) * ESP.Settings.TextSettings.TextScale.Value
-            
+            local barScale = textScale * 0.8 -- Бары немного меньше
+
             if ESP.Settings.ESPMode.Value == "3D" then
                 local points = get3DBoxPoints(character, camera)
                 if points then
-                    local minY = math.huge
+                    local maxY = -math.huge
                     for i = 1, 8 do
-                        if points[i].Y < minY then minY = points[i].Y end
+                        if points[i].Y > maxY then maxY = points[i].Y end
                     end
                     
                     if ESP.Settings.BoxSettings.InfoPosition.Value == "Top" then
                         -- Информация сверху: под именем
-                        nameY = minY - 25 * textScale
+                        nameY = maxY - 40 * textScale
+                        infoY = nameY + 15 * textScale
+                        barsY = infoY + 10 * textScale
                     else
                         -- Информация снизу: под боксом
-                        local maxY = -math.huge
-                        for i = 1, 8 do
-                            if points[i].Y > maxY then maxY = points[i].Y end
-                        end
                         nameY = maxY + 10 * textScale
+                        infoY = nameY + 15 * textScale
+                        barsY = infoY + 10 * textScale
                     end
                 else
                     nameY = rootPos.Y - 35 * textScale
+                    infoY = nameY + 15 * textScale
+                    barsY = infoY + 10 * textScale
                 end
             else
                 local headPos = camera:WorldToViewportPoint(rootPart.Position + Vector3.new(0, 3.5, 0))
@@ -1300,21 +1290,24 @@ function Visuals.Init(UI, Core, notify)
                 if ESP.Settings.BoxSettings.InfoPosition.Value == "Top" then
                     -- Информация сверху: под именем
                     nameY = headPos.Y - 35 * textScale
+                    infoY = nameY + 15 * textScale
+                    barsY = infoY + 10 * textScale
                 else
                     -- Информация снизу: под боксом
                     nameY = feetPos.Y + 10 * textScale
+                    infoY = nameY + 15 * textScale
+                    barsY = infoY + 10 * textScale
                 end
             end
-            
-            -- Позиция для дополнительной информации (страна, устройство, кулдауны)
-            infoY = nameY + 15 * textScale
 
             -- Проверяем, чтобы текст не уходил за пределы экрана
             local screenHeight = Core.Services.UserInputService:GetMouseLocation().Y * 2
             if nameY < 20 then nameY = 20 end
-            if infoY < 35 then infoY = 35 end
-            if nameY > screenHeight - 60 then nameY = screenHeight - 60 end
-            if infoY > screenHeight - 45 then infoY = screenHeight - 45 end
+            if infoY < 40 then infoY = 40 end
+            if barsY < 60 then barsY = 60 end
+            if nameY > screenHeight - 80 then nameY = screenHeight - 80 end
+            if infoY > screenHeight - 60 then infoY = screenHeight - 60 end
+            if barsY > screenHeight - 40 then barsY = screenHeight - 40 end
 
             -- Отображение имени
             if ESP.Settings.BoxSettings.ShowNames.Value then
@@ -1367,29 +1360,107 @@ function Visuals.Init(UI, Core, notify)
                 local actualInfoSize = math.floor(ESP.Settings.TextSettings.TextSize.Value * 0.8 * textScale)
                 
                 if ESP.Settings.TextSettings.TextMethod.Value == "Drawing" then
-                    esp.CountryDrawing.Text = infoText
-                    esp.CountryDrawing.Size = actualInfoSize
-                    esp.CountryDrawing.Position = Vector2.new(rootPos.X, infoY)
-                    esp.CountryDrawing.Color = infoColor
-                    esp.CountryDrawing.Visible = true
-                    if esp.CountryGui then esp.CountryGui.Visible = false end
-                elseif ESP.Settings.TextSettings.TextMethod.Value == "GUI" and esp.CountryGui then
-                    esp.CountryGui.Text = infoText
-                    esp.CountryGui.Position = UDim2.new(0, rootPos.X - 100, 0, infoY)
-                    esp.CountryGui.TextSize = actualInfoSize
-                    esp.CountryGui.TextColor3 = infoColor
-                    esp.CountryGui.Visible = true
-                    esp.CountryDrawing.Visible = false
+                    esp.InfoDrawing.Text = infoText
+                    esp.InfoDrawing.Size = actualInfoSize
+                    esp.InfoDrawing.Position = Vector2.new(rootPos.X, infoY)
+                    esp.InfoDrawing.Color = infoColor
+                    esp.InfoDrawing.Visible = true
+                    if esp.InfoGui then esp.InfoGui.Visible = false end
+                elseif ESP.Settings.TextSettings.TextMethod.Value == "GUI" and esp.InfoGui then
+                    esp.InfoGui.Text = infoText
+                    esp.InfoGui.Position = UDim2.new(0, rootPos.X - 100, 0, infoY)
+                    esp.InfoGui.TextSize = actualInfoSize
+                    esp.InfoGui.TextColor3 = infoColor
+                    esp.InfoGui.Visible = true
+                    esp.InfoDrawing.Visible = false
                 end
             else
-                esp.CountryDrawing.Visible = false
-                esp.DeviceDrawing.Visible = false
-                esp.DribbleCDDrawing.Visible = false
-                esp.TackleCDDrawing.Visible = false
-                if esp.CountryGui then esp.CountryGui.Visible = false end
-                if esp.DeviceGui then esp.DeviceGui.Visible = false end
-                if esp.DribbleCDGui then esp.DribbleCDGui.Visible = false end
-                if esp.TackleCDGui then esp.TackleCDGui.Visible = false end
+                esp.InfoDrawing.Visible = false
+                if esp.InfoGui then esp.InfoGui.Visible = false end
+            end
+
+            -- Отображение баров кулдаунов
+            if ESP.Settings.ESPMode.Value == "3D" then
+                -- Для 3D: бары снизу
+                local barWidth = 40 * barScale
+                local barHeight = 4 * barScale
+                local barSpacing = 6 * barScale
+                
+                -- Бар дриблинга
+                if ESP.Settings.BoxSettings.ShowDribbleBar.Value and esp.DribbleBar then
+                    local dribblePercent = math.min(1, dribbleCD / 3.5) -- 3.5 секунды макс
+                    local currentWidth = barWidth * (1 - dribblePercent)
+                    
+                    esp.DribbleBar.Position = UDim2.new(
+                        0, rootPos.X - barWidth/2,
+                        0, barsY
+                    )
+                    esp.DribbleBar.Size = UDim2.new(0, currentWidth, 0, barHeight)
+                    esp.DribbleBar.BackgroundColor3 = ESP.Settings.BoxSettings.DribbleBarColor.Value
+                    esp.DribbleBar.Visible = true
+                else
+                    if esp.DribbleBar then esp.DribbleBar.Visible = false end
+                end
+                
+                -- Бар текла
+                if ESP.Settings.BoxSettings.ShowTackleBar.Value and esp.TackleBar then
+                    local tacklePercent = math.min(1, tackleCD / 4.0) -- 4 секунды макс
+                    local currentWidth = barWidth * (1 - tacklePercent)
+                    
+                    esp.TackleBar.Position = UDim2.new(
+                        0, rootPos.X - barWidth/2,
+                        0, barsY + barHeight + barSpacing
+                    )
+                    esp.TackleBar.Size = UDim2.new(0, currentWidth, 0, barHeight)
+                    esp.TackleBar.BackgroundColor3 = ESP.Settings.BoxSettings.TackleBarColor.Value
+                    esp.TackleBar.Visible = true
+                else
+                    if esp.TackleBar then esp.TackleBar.Visible = false end
+                end
+            else
+                -- Для 2D: бары внизу бокса
+                if ESP.Settings.BoxSettings.ShowBox.Value then
+                    local feetPos = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3.5, 0))
+                    local barStartY = feetPos.Y + 5 * barScale
+                    local barWidth = 60 * barScale
+                    local barHeight = 3 * barScale
+                    local barSpacing = 5 * barScale
+                    
+                    -- Бар дриблинга
+                    if ESP.Settings.BoxSettings.ShowDribbleBar.Value and esp.DribbleBar then
+                        local dribblePercent = math.min(1, dribbleCD / 3.5)
+                        local currentWidth = barWidth * (1 - dribblePercent)
+                        
+                        esp.DribbleBar.Position = UDim2.new(
+                            0, rootPos.X - barWidth/2,
+                            0, barStartY
+                        )
+                        esp.DribbleBar.Size = UDim2.new(0, currentWidth, 0, barHeight)
+                        esp.DribbleBar.BackgroundColor3 = ESP.Settings.BoxSettings.DribbleBarColor.Value
+                        esp.DribbleBar.Visible = true
+                    else
+                        if esp.DribbleBar then esp.DribbleBar.Visible = false end
+                    end
+                    
+                    -- Бар текла
+                    if ESP.Settings.BoxSettings.ShowTackleBar.Value and esp.TackleBar then
+                        local tacklePercent = math.min(1, tackleCD / 4.0)
+                        local currentWidth = barWidth * (1 - tacklePercent)
+                        
+                        esp.TackleBar.Position = UDim2.new(
+                            0, rootPos.X - barWidth/2,
+                            0, barStartY + barHeight + barSpacing
+                        )
+                        esp.TackleBar.Size = UDim2.new(0, currentWidth, 0, barHeight)
+                        esp.TackleBar.BackgroundColor3 = ESP.Settings.BoxSettings.TackleBarColor.Value
+                        esp.TackleBar.Visible = true
+                    else
+                        if esp.TackleBar then esp.TackleBar.Visible = false end
+                    end
+                else
+                    if esp.DribbleBar then esp.DribbleBar.Visible = false end
+                    if esp.TackleBar then esp.TackleBar.Visible = false end
+                end
             end
         end
     end
@@ -1758,6 +1829,60 @@ function Visuals.Init(UI, Core, notify)
                 end
             }, 'ShowTackleCD')
             
+            UI.Sections.ESP:Toggle({
+                Name = "Show Dribble Bar",
+                Default = ESP.Settings.BoxSettings.ShowDribbleBar.Default,
+                Callback = function(value)
+                    ESP.Settings.BoxSettings.ShowDribbleBar.Value = value
+                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                        ESP.LastNotificationTime = tick()
+                        notify("ESP", "Dribble Bar " .. (value and "Enabled" or "Disabled"), true)
+                    end
+                end
+            }, 'ShowDribbleBar')
+            
+            UI.Sections.ESP:Toggle({
+                Name = "Show Tackle Bar",
+                Default = ESP.Settings.BoxSettings.ShowTackleBar.Default,
+                Callback = function(value)
+                    ESP.Settings.BoxSettings.ShowTackleBar.Value = value
+                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                        ESP.LastNotificationTime = tick()
+                        notify("ESP", "Tackle Bar " .. (value and "Enabled" or "Disabled"), true)
+                    end
+                end
+            }, 'ShowTackleBar')
+            
+            UI.Sections.ESP:Colorpicker({
+                Name = "Dribble Bar Color",
+                Default = ESP.Settings.BoxSettings.DribbleBarColor.Default,
+                Callback = function(value)
+                    ESP.Settings.BoxSettings.DribbleBarColor.Value = value
+                    for _, esp in pairs(ESP.Elements) do
+                        if esp.DribbleBar then esp.DribbleBar.BackgroundColor3 = value end
+                    end
+                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                        ESP.LastNotificationTime = tick()
+                        notify("ESP", "Dribble Bar Color updated", true)
+                    end
+                end
+            }, 'DribbleBarColor')
+            
+            UI.Sections.ESP:Colorpicker({
+                Name = "Tackle Bar Color",
+                Default = ESP.Settings.BoxSettings.TackleBarColor.Default,
+                Callback = function(value)
+                    ESP.Settings.BoxSettings.TackleBarColor.Value = value
+                    for _, esp in pairs(ESP.Elements) do
+                        if esp.TackleBar then esp.TackleBar.BackgroundColor3 = value end
+                    end
+                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
+                        ESP.LastNotificationTime = tick()
+                        notify("ESP", "Tackle Bar Color updated", true)
+                    end
+                end
+            }, 'TackleBarColor')
+            
             UI.Sections.ESP:Dropdown({
                 Name = "Info Position",
                 Options = {"Bottom", "Top"},
@@ -1770,42 +1895,6 @@ function Visuals.Init(UI, Core, notify)
                     end
                 end
             }, 'InfoPosition')
-            
-            UI.Sections.ESP:Dropdown({
-                Name = "HP Bar Style",
-                Options = {"Default", "Left", "Right", "Both"},
-                Default = ESP.Settings.BoxSettings.HPBarStyle.Default,
-                Callback = function(value)
-                    ESP.Settings.BoxSettings.HPBarStyle.Value = value
-                    -- Пересоздаем ESP для всех игроков с новым стилем HP бара
-                    for _, player in pairs(Core.Services.Players:GetPlayers()) do
-                        if player ~= Core.PlayerData.LocalPlayer then
-                            removeESP(player)
-                            createESP(player)
-                        end
-                    end
-                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
-                        ESP.LastNotificationTime = tick()
-                        notify("ESP", "HP Bar Style set to: " .. value, true)
-                    end
-                end
-            }, 'HPBarStyle')
-            
-            UI.Sections.ESP:Colorpicker({
-                Name = "HP Bar Color",
-                Default = ESP.Settings.BoxSettings.HPBarColor.Default,
-                Callback = function(value)
-                    ESP.Settings.BoxSettings.HPBarColor.Value = value
-                    for _, esp in pairs(ESP.Elements) do
-                        if esp.HPBarLeft then esp.HPBarLeft.BackgroundColor3 = value end
-                        if esp.HPBarRight then esp.HPBarRight.BackgroundColor3 = value end
-                    end
-                    if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
-                        ESP.LastNotificationTime = tick()
-                        notify("ESP", "HP Bar Color updated", true)
-                    end
-                end
-            }, 'HPBarColor')
             
             UI.Sections.ESP:Divider()
             
@@ -1834,15 +1923,9 @@ function Visuals.Init(UI, Core, notify)
                     ESP.Settings.TextSettings.TextSize.Value = value
                     for _, esp in pairs(ESP.Elements) do
                         esp.NameDrawing.Size = value
-                        esp.CountryDrawing.Size = math.floor(value * 0.8)
-                        esp.DeviceDrawing.Size = math.floor(value * 0.8)
-                        esp.DribbleCDDrawing.Size = math.floor(value * 0.7)
-                        esp.TackleCDDrawing.Size = math.floor(value * 0.7)
+                        esp.InfoDrawing.Size = math.floor(value * 0.8)
                         if esp.NameGui then esp.NameGui.TextSize = value end
-                        if esp.CountryGui then esp.CountryGui.TextSize = math.floor(value * 0.8) end
-                        if esp.DeviceGui then esp.DeviceGui.TextSize = math.floor(value * 0.8) end
-                        if esp.DribbleCDGui then esp.DribbleCDGui.TextSize = math.floor(value * 0.7) end
-                        if esp.TackleCDGui then esp.TackleCDGui.TextSize = math.floor(value * 0.7) end
+                        if esp.InfoGui then esp.InfoGui.TextSize = math.floor(value * 0.8) end
                     end
                     if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
                         ESP.LastNotificationTime = tick()
@@ -1899,10 +1982,7 @@ function Visuals.Init(UI, Core, notify)
                     ESP.Settings.TextSettings.TextFont.Value = fontMap[value] or Drawing.Fonts.Plex
                     for _, esp in pairs(ESP.Elements) do 
                         esp.NameDrawing.Font = ESP.Settings.TextSettings.TextFont.Value 
-                        esp.CountryDrawing.Font = ESP.Settings.TextSettings.TextFont.Value 
-                        esp.DeviceDrawing.Font = ESP.Settings.TextSettings.TextFont.Value 
-                        esp.DribbleCDDrawing.Font = ESP.Settings.TextSettings.TextFont.Value 
-                        esp.TackleCDDrawing.Font = ESP.Settings.TextSettings.TextFont.Value 
+                        esp.InfoDrawing.Font = ESP.Settings.TextSettings.TextFont.Value 
                     end
                     if tick() - ESP.LastNotificationTime >= ESP.NotificationDelay then
                         ESP.LastNotificationTime = tick()
