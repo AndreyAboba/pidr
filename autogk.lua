@@ -1,6 +1,6 @@
 -- GK Helper v47 — Advanced Defense Module
 -- Improved version with smart attack prediction and fixed dive bug
-
+print('2')
 local player = game.Players.LocalPlayer
 local ws = workspace
 local rs = game:GetService("RunService")
@@ -1844,4 +1844,5 @@ function GKHelperModule:Destroy()
 end
 
 return GKHelperModule
+
 
