@@ -20,9 +20,7 @@ function ChinaHat.Init(UI, Core, notify)
             HatGradient = { Value = true, Default = true },
             HatColor = { Value = Color3.fromRGB(0, 0, 255), Default = Color3.fromRGB(0, 0, 255) },
             HatYOffset = { Value = 1.6, Default = 1.6 },
-            OutlineCircle = { Value = false, Default = false },
-            Filled = { Value = false, Default = false }, -- Новая опция для заполненного ChinaHat
-            FillTransparency = { Value = 0.3, Default = 0.3 } -- Прозрачность заполнения
+            OutlineCircle = { Value = false, Default = false }
         },
         Circle = {
             CircleActive = { Value = false, Default = false },
@@ -32,8 +30,7 @@ function ChinaHat.Init(UI, Core, notify)
             CircleGradient = { Value = true, Default = true },
             CircleColor = { Value = Color3.fromRGB(0, 0, 255), Default = Color3.fromRGB(0, 0, 255) },
             JumpAnimate = { Value = false, Default = false },
-            CircleYOffset = { Value = -3, Default = -3 },
-            StickToGround = { Value = true, Default = true } -- Автоматическое прилипание к земле
+            CircleYOffset = { Value = -3, Default = -3 }
         },
         Nimb = {
             NimbActive = { Value = false, Default = false },
@@ -48,7 +45,6 @@ function ChinaHat.Init(UI, Core, notify)
 
     local hatLines = {}
     local hatCircleQuads = {}
-    local hatFilledTriangles = {} -- Треугольники для заполненного ChinaHat
     local circleQuads = {}
     local nimbQuads = {}
     local jumpAnimationActive = false
@@ -56,11 +52,10 @@ function ChinaHat.Init(UI, Core, notify)
     local humanoidConnection
     local uiElements = {}
     
-    -- Переменные для стабильного позиционирования
-    local lastGroundHeight = 0
-    local groundSmoothness = 0.9 -- Коэффициент сглаживания (0-1)
+    -- Переменные для отслеживания состояния ShiftLock
     local isShiftLockEnabled = false
     local shiftLockConnection
+    local lastCameraDistance = 0
 
     local function destroyParts(parts)
         for _, part in ipairs(parts) do
@@ -79,33 +74,19 @@ function ChinaHat.Init(UI, Core, notify)
         )
     end
 
-    -- Улучшенная функция определения высоты земли со сглаживанием
-    local function getSmoothedGroundHeight(rootPart)
-        if not rootPart then return 0 end
+    -- Функция для определения высоты персонажа
+    local function getCharacterHeight()
+        if not localCharacter then return 5 end
         
-        local rayOrigin = rootPart.Position
-        local rayDirection = Vector3.new(0, -100, 0)
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-        raycastParams.FilterDescendantsInstances = {localCharacter}
-        
-        local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-        
-        local currentHeight = 0
-        if raycastResult then
-            currentHeight = raycastResult.Position.Y
-        else
-            -- Если луч не попал ни во что, используем текущую высоту персонажа - 3
-            currentHeight = rootPart.Position.Y - 3
+        local humanoid = localCharacter:FindFirstChild("Humanoid")
+        if humanoid then
+            return humanoid.HipHeight + 2.5 -- Более точное определение высоты
         end
         
-        -- Сглаживание высоты для предотвращения рывков
-        lastGroundHeight = lastGroundHeight * groundSmoothness + currentHeight * (1 - groundSmoothness)
-        
-        return lastGroundHeight
+        return 5 -- Значение по умолчанию
     end
 
-    -- Функция для обновления состояния ShiftLock
+    -- Функция для определения, включен ли ShiftLock
     local function updateShiftLockState()
         if camera and localCharacter and localCharacter:FindFirstChild("HumanoidRootPart") then
             local characterPos = localCharacter.HumanoidRootPart.Position
@@ -113,17 +94,19 @@ function ChinaHat.Init(UI, Core, notify)
             
             -- Вычисляем расстояние между камерой и персонажем
             local distance = (cameraPos - characterPos).Magnitude
+            lastCameraDistance = distance
             
-            -- Также проверяем угол камеры для более точного определения
-            local cameraCFrame = camera.CFrame
-            local cameraLookVector = cameraCFrame.LookVector
-            local toCharacter = (characterPos - cameraPos).Unit
+            -- Определяем ShiftLock по расстоянию и углу камеры
+            -- В Roblox классический режим от 3-го лица имеет расстояние ~12-20
+            isShiftLockEnabled = distance > 10
             
-            -- Если камера смотрит на персонажа с расстояния > 8, считаем что включен ShiftLock
-            local dotProduct = cameraLookVector:Dot(toCharacter)
-            isShiftLockEnabled = distance > 8 and dotProduct > 0.5
+            -- Также проверяем тип камеры, если доступно
+            if camera.CameraType then
+                isShiftLockEnabled = camera.CameraType == Enum.CameraType.Scriptable or distance > 10
+            end
         else
             isShiftLockEnabled = false
+            lastCameraDistance = 0
         end
     end
 
@@ -131,11 +114,7 @@ function ChinaHat.Init(UI, Core, notify)
         if not localCharacter or not localCharacter:FindFirstChild("Head") then return end
         destroyParts(hatLines)
         destroyParts(hatCircleQuads)
-        destroyParts(hatFilledTriangles)
-        
         local head = localCharacter.Head
-        
-        -- Создаем линии для контура
         for i = 1, State.ChinaHat.HatParts.Value do
             local line = Drawing.new("Line")
             line.Visible = false
@@ -146,21 +125,6 @@ function ChinaHat.Init(UI, Core, notify)
                 State.ChinaHat.HatColor.Value
             table.insert(hatLines, line)
         end
-        
-        -- Создаем треугольники для заполнения, если включена опция
-        if State.ChinaHat.Filled.Value then
-            for i = 1, State.ChinaHat.HatParts.Value do
-                local triangle = Drawing.new("Triangle")
-                triangle.Visible = false
-                triangle.Transparency = State.ChinaHat.FillTransparency.Value
-                triangle.Color = State.ChinaHat.HatGradient.Value and
-                    interpolateColor(Core.GradientColors.Color1.Value, Core.GradientColors.Color2.Value, i / State.ChinaHat.HatParts.Value) or
-                    State.ChinaHat.HatColor.Value
-                table.insert(hatFilledTriangles, triangle)
-            end
-        end
-        
-        -- Создаем контур круга, если включена опция
         if State.ChinaHat.OutlineCircle.Value then
             for i = 1, State.ChinaHat.HatParts.Value do
                 local quad = Drawing.new("Quad")
@@ -207,9 +171,12 @@ function ChinaHat.Init(UI, Core, notify)
 
     local function updateHat()
         if not State.ChinaHat.HatActive.Value or not localCharacter or not localCharacter:FindFirstChild("Head") then
-            for _, line in ipairs(hatLines) do line.Visible = false end
-            for _, quad in ipairs(hatCircleQuads) do quad.Visible = false end
-            for _, tri in ipairs(hatFilledTriangles) do tri.Visible = false end
+            for _, line in ipairs(hatLines) do
+                line.Visible = false
+            end
+            for _, quad in ipairs(hatCircleQuads) do
+                quad.Visible = false
+            end
             return
         end
         
@@ -218,96 +185,67 @@ function ChinaHat.Init(UI, Core, notify)
         -- Обновляем состояние ShiftLock
         updateShiftLockState()
         
-        -- Автоматическая корректировка высоты для ChinaHat
-        local yOffset = State.ChinaHat.HatYOffset.Value
-        if isShiftLockEnabled then
-            -- При ShiftLock добавляем дополнительное смещение
-            yOffset = yOffset + 0.3
-        end
-        
-        local baseY = head.Position.Y + yOffset
+        -- Фиксированная высота для ChinaHat
+        local y = head.Position.Y + State.ChinaHat.HatYOffset.Value
         local t = tick()
         local hatHeight = 2.15 * State.ChinaHat.HatScale.Value
         local hatRadius = 1.95 * State.ChinaHat.HatScale.Value
-        
-        -- Получаем базовую позицию и позицию вершины
-        local basePosition = Vector3.new(head.Position.X, baseY, head.Position.Z)
-        local topCenter = Vector3.new(head.Position.X, baseY - hatHeight, head.Position.Z)
-        
-        local screenBase, onScreenBase = camera:WorldToViewportPoint(basePosition)
-        local screenTop, onScreenTop = camera:WorldToViewportPoint(topCenter)
-        
-        if not (onScreenBase and onScreenTop and screenBase.Z > 0 and screenTop.Z > 0) then
-            for _, line in ipairs(hatLines) do line.Visible = false end
-            for _, quad in ipairs(hatCircleQuads) do quad.Visible = false end
-            for _, tri in ipairs(hatFilledTriangles) do tri.Visible = false end
-            return
-        end
 
-        -- Обновляем линии и/или треугольники
-        for i = 1, State.ChinaHat.HatParts.Value do
+        for i, line in ipairs(hatLines) do
             local angle = (i / State.ChinaHat.HatParts.Value) * 2 * math.pi
             local x = math.cos(angle) * hatRadius
             local z = math.sin(angle) * hatRadius
-            
-            local rimPoint = Vector3.new(head.Position.X + x, baseY, head.Position.Z + z)
-            local screenRim, onScreenRim = camera:WorldToViewportPoint(rimPoint)
-            
-            if onScreenRim and screenRim.Z > 0 then
-                local color
+            local basePosition = Vector3.new(head.Position.X, y, head.Position.Z)
+            local topPosition = Vector3.new(head.Position.X + x, y - hatHeight / 3, head.Position.Z + z)
+            local offset = 0.03
+            local direction = (topPosition - basePosition).Unit
+            local endPoint = topPosition + direction * offset
+
+            local screenStart, onScreenStart = camera:WorldToViewportPoint(basePosition)
+            local screenEnd, onScreenEnd = camera:WorldToViewportPoint(endPoint)
+
+            if onScreenStart and onScreenEnd and screenStart.Z > 0 and screenEnd.Z > 0 then
+                line.From = Vector2.new(screenStart.X, screenStart.Y)
+                line.To = Vector2.new(screenEnd.X, screenEnd.Y)
+                line.Visible = true
                 if State.ChinaHat.HatGradient.Value then
                     local factor = (math.sin(t * State.ChinaHat.HatGradientSpeed.Value + (i / State.ChinaHat.HatParts.Value) * 2 * math.pi) + 1) / 2
-                    color = interpolateColor(Core.GradientColors.Color1.Value, Core.GradientColors.Color2.Value, factor)
+                    line.Color = interpolateColor(Core.GradientColors.Color1.Value, Core.GradientColors.Color2.Value, factor)
                 else
-                    color = State.ChinaHat.HatColor.Value
-                end
-                
-                -- Обновляем линию
-                if hatLines[i] then
-                    hatLines[i].From = Vector2.new(screenBase.X, screenBase.Y)
-                    hatLines[i].To = Vector2.new(screenRim.X, screenRim.Y)
-                    hatLines[i].Color = color
-                    hatLines[i].Visible = true
-                end
-                
-                -- Обновляем треугольник для заполнения
-                if State.ChinaHat.Filled.Value and hatFilledTriangles[i] then
-                    local nextAngle = ((i % State.ChinaHat.HatParts.Value + 1) / State.ChinaHat.HatParts.Value) * 2 * math.pi
-                    local nextX = math.cos(nextAngle) * hatRadius
-                    local nextZ = math.sin(nextAngle) * hatRadius
-                    
-                    local nextRimPoint = Vector3.new(head.Position.X + nextX, baseY, head.Position.Z + nextZ)
-                    local screenNextRim, onScreenNextRim = camera:WorldToViewportPoint(nextRimPoint)
-                    
-                    if onScreenNextRim and screenNextRim.Z > 0 then
-                        hatFilledTriangles[i].PointA = Vector2.new(screenBase.X, screenBase.Y)
-                        hatFilledTriangles[i].PointB = Vector2.new(screenRim.X, screenRim.Y)
-                        hatFilledTriangles[i].PointC = Vector2.new(screenNextRim.X, screenNextRim.Y)
-                        hatFilledTriangles[i].Color = color
-                        hatFilledTriangles[i].Transparency = State.ChinaHat.FillTransparency.Value
-                        hatFilledTriangles[i].Visible = true
-                    else
-                        hatFilledTriangles[i].Visible = false
-                    end
+                    line.Color = State.ChinaHat.HatColor.Value
                 end
             else
-                if hatLines[i] then hatLines[i].Visible = false end
-                if hatFilledTriangles[i] then hatFilledTriangles[i].Visible = false end
+                line.Visible = false
             end
         end
 
-        -- Обновляем контур круга, если включен
         if State.ChinaHat.OutlineCircle.Value and #hatCircleQuads > 0 then
-            local rimCenter = Vector3.new(head.Position.X, baseY - hatHeight, head.Position.Z)
-            local screenRimCenter, onScreenRimCenter = camera:WorldToViewportPoint(rimCenter)
-            
-            if onScreenRimCenter and screenRimCenter.Z > 0 then
+            local topCenter = Vector3.new(0, 0, 0)
+            local visibleEnds = 0
+            for i, line in ipairs(hatLines) do
+                if line.Visible then
+                    local angle = (i / State.ChinaHat.HatParts.Value) * 2 * math.pi
+                    x = math.cos(angle) * hatRadius
+                    z = math.sin(angle) * hatRadius
+                    local topPosition = Vector3.new(head.Position.X + x, y - hatHeight / 3, head.Position.Z + z)
+                    topCenter = topCenter + topPosition
+                    visibleEnds = visibleEnds + 1
+                end
+            end
+            if visibleEnds > 0 then
+                topCenter = topCenter / visibleEnds
+            else
+                topCenter = Vector3.new(head.Position.X, y - hatHeight / 3, head.Position.Z)
+            end
+
+            local screenCenter, onScreenCenter = camera:WorldToViewportPoint(topCenter)
+            if onScreenCenter and screenCenter.Z > 0 then
                 local circleRadius = 2.0 * State.ChinaHat.HatScale.Value
                 for i, quad in ipairs(hatCircleQuads) do
                     local angle1 = ((i - 1) / #hatCircleQuads) * 2 * math.pi
                     local angle2 = (i / #hatCircleQuads) * 2 * math.pi
-                    local point1 = rimCenter + Vector3.new(math.cos(angle1) * circleRadius, 0, math.sin(angle1) * circleRadius)
-                    local point2 = rimCenter + Vector3.new(math.cos(angle2) * circleRadius, 0, math.sin(angle2) * circleRadius)
+                    local point1 = topCenter + Vector3.new(math.cos(angle1) * circleRadius, 0, math.sin(angle1) * circleRadius)
+                    local point2 = topCenter + Vector3.new(math.cos(angle2) * circleRadius, 0, math.sin(angle2) * circleRadius)
                     local screenPoint1, onScreen1 = camera:WorldToViewportPoint(point1)
                     local screenPoint2, onScreen2 = camera:WorldToViewportPoint(point2)
 
@@ -348,25 +286,27 @@ function ChinaHat.Init(UI, Core, notify)
         -- Обновляем состояние ShiftLock
         updateShiftLockState()
         
-        -- Автоматическая корректировка высоты для Circle
-        local yOffset
+        -- Фиксированная позиция Circle под ногами
+        -- Вместо raycast используем фиксированное смещение от HumanoidRootPart
+        local circleHeight
         
-        if State.Circle.StickToGround.Value then
-            -- Прилипаем к земле с использованием сглаженной высоты
-            yOffset = getSmoothedGroundHeight(rootPart) + 0.05 -- Немного выше земли
-        else
-            -- Используем обычное смещение
-            if isShiftLockEnabled then
-                -- При ShiftLock используем позицию земли
-                yOffset = getSmoothedGroundHeight(rootPart) + 0.05
+        if isShiftLockEnabled then
+            -- В режиме ShiftLock располагаем Circle на "уровне ног"
+            -- Используем смещение от HumanoidRootPart вниз
+            -- Для большинства персонажей это примерно Humanoid.HipHeight * 0.8
+            if localCharacter:FindFirstChild("Humanoid") then
+                local humanoid = localCharacter.Humanoid
+                circleHeight = rootPart.Position.Y - (humanoid.HipHeight * 0.8)
             else
-                -- В обычном режиме используем смещение относительно корневой части
-                yOffset = rootPart.Position.Y + State.Circle.CircleYOffset.Value
+                circleHeight = rootPart.Position.Y - 2 -- Значение по умолчанию
             end
+        else
+            -- В обычном режиме используем настроенное смещение
+            circleHeight = rootPart.Position.Y + State.Circle.CircleYOffset.Value
         end
         
         local t = tick()
-        local center = Vector3.new(rootPart.Position.X, yOffset, rootPart.Position.Z)
+        local center = Vector3.new(rootPart.Position.X, circleHeight, rootPart.Position.Z)
         local screenCenter, onScreenCenter = camera:WorldToViewportPoint(center)
         
         if not (onScreenCenter and screenCenter.Z > 0) then
@@ -418,24 +358,30 @@ function ChinaHat.Init(UI, Core, notify)
         -- Обновляем состояние ShiftLock
         updateShiftLockState()
         
-        -- Автоматическая корректировка высоты для Nimb
-        local yOffset
+        -- Фиксированная позиция Nimb над головой
+        local nimbHeight
         
         if isShiftLockEnabled then
-            -- При ShiftLock располагаем Nimb над головой
+            -- В режиме ShiftLock располагаем Nimb над головой
             if localCharacter:FindFirstChild("Head") then
                 local head = localCharacter.Head
-                yOffset = head.Position.Y + 0.5 -- Над головой
+                nimbHeight = head.Position.Y + 0.8 -- Над головой
             else
-                yOffset = rootPart.Position.Y + State.Nimb.NimbYOffset.Value + 2.0
+                -- Если голова недоступна, используем расчетную высоту
+                if localCharacter:FindFirstChild("Humanoid") then
+                    local humanoid = localCharacter.Humanoid
+                    nimbHeight = rootPart.Position.Y + humanoid.HipHeight + 1.5
+                else
+                    nimbHeight = rootPart.Position.Y + 3.5
+                end
             end
         else
-            -- В обычном режиме используем смещение относительно корневой части
-            yOffset = rootPart.Position.Y + State.Nimb.NimbYOffset.Value
+            -- В обычном режиме используем настроенное смещение
+            nimbHeight = rootPart.Position.Y + State.Nimb.NimbYOffset.Value
         end
         
         local t = tick()
-        local center = Vector3.new(rootPart.Position.X, yOffset, rootPart.Position.Z)
+        local center = Vector3.new(rootPart.Position.X, nimbHeight, rootPart.Position.Z)
         local screenCenter, onScreenCenter = camera:WorldToViewportPoint(center)
         
         if not (onScreenCenter and screenCenter.Z > 0) then
@@ -500,7 +446,6 @@ function ChinaHat.Init(UI, Core, notify)
         else
             destroyParts(hatLines)
             destroyParts(hatCircleQuads)
-            destroyParts(hatFilledTriangles)
             notify("ChinaHat", "Hat Disabled", true)
         end
     end
@@ -543,9 +488,6 @@ function ChinaHat.Init(UI, Core, notify)
             localHumanoid = humanoid
             humanoidConnection = humanoid.StateChanged:Connect(onStateChanged)
         end
-        -- Сбрасываем сглаженную высоту при смене персонажа
-        lastGroundHeight = 0
-        
         -- Воссоздаем элементы, если они активны
         if State.ChinaHat.HatActive.Value then
             createHat()
@@ -574,9 +516,6 @@ function ChinaHat.Init(UI, Core, notify)
             end
             for _, quad in ipairs(hatCircleQuads) do
                 quad.Visible = false
-            end
-            for _, tri in ipairs(hatFilledTriangles) do
-                tri.Visible = false
             end
             for _, quad in ipairs(circleQuads) do
                 quad.Visible = false
@@ -636,32 +575,6 @@ function ChinaHat.Init(UI, Core, notify)
                 notify("ChinaHat", "Hat Parts set to: " .. value, false)
             end,
         }, 'HatParts')
-        chinaHatSection:Divider()
-        uiElements.HatFilled = chinaHatSection:Toggle({
-            Name = "Filled",
-            Default = State.ChinaHat.Filled.Default,
-            Callback = function(value)
-                State.ChinaHat.Filled.Value = value
-                if State.ChinaHat.HatActive.Value then
-                    createHat()
-                end
-                notify("ChinaHat", "Filled: " .. (value and "Enabled" or "Disabled"), true)
-            end,
-        }, 'HatFilled')
-        uiElements.FillTransparency = chinaHatSection:Slider({
-            Name = "Fill Transparency",
-            Minimum = 0,
-            Maximum = 1,
-            Default = State.ChinaHat.FillTransparency.Default,
-            Precision = 2,
-            Callback = function(value)
-                State.ChinaHat.FillTransparency.Value = value
-                if State.ChinaHat.HatActive.Value and State.ChinaHat.Filled.Value then
-                    createHat()
-                end
-                notify("ChinaHat", "Fill Transparency set to: " .. value, false)
-            end,
-        }, 'FillTransparency')
         chinaHatSection:Divider()
         uiElements.HatGradientSpeed = chinaHatSection:Slider({
             Name = "Gradient Speed",
@@ -732,14 +645,6 @@ function ChinaHat.Init(UI, Core, notify)
             end,
         }, 'CircleEnabled')
         circleSection:Divider()
-        uiElements.StickToGround = circleSection:Toggle({
-            Name = "Stick to Ground",
-            Default = State.Circle.StickToGround.Default,
-            Callback = function(value)
-                State.Circle.StickToGround.Value = value
-                notify("Circle", "Stick to Ground: " .. (value and "Enabled" or "Disabled"), true)
-            end,
-        }, 'StickToGround')
         uiElements.CircleRadius = circleSection:Slider({
             Name = "Radius",
             Minimum = 1.0,
@@ -908,8 +813,6 @@ function ChinaHat.Init(UI, Core, notify)
                 State.ChinaHat.HatParts.Value = uiElements.HatParts:GetValue()
                 State.ChinaHat.HatGradientSpeed.Value = uiElements.HatGradientSpeed:GetValue()
                 State.ChinaHat.HatYOffset.Value = uiElements.HatYOffset:GetValue()
-                State.ChinaHat.Filled.Value = uiElements.HatFilled:GetValue()
-                State.ChinaHat.FillTransparency.Value = uiElements.FillTransparency:GetValue()
                 if State.ChinaHat.HatActive.Value then
                     createHat()
                 end
@@ -917,7 +820,6 @@ function ChinaHat.Init(UI, Core, notify)
                 State.Circle.CircleRadius.Value = uiElements.CircleRadius:GetValue()
                 State.Circle.CircleParts.Value = uiElements.CircleParts:GetValue()
                 State.Circle.CircleGradientSpeed.Value = uiElements.CircleGradientSpeed:GetValue()
-                State.Circle.StickToGround.Value = uiElements.StickToGround:GetValue()
                 if State.Circle.CircleActive.Value then
                     createCircle()
                 end
@@ -938,7 +840,6 @@ function ChinaHat.Init(UI, Core, notify)
     function ChinaHat:Destroy()
         destroyParts(hatLines)
         destroyParts(hatCircleQuads)
-        destroyParts(hatFilledTriangles)
         destroyParts(circleQuads)
         destroyParts(nimbQuads)
         if renderConnection then
