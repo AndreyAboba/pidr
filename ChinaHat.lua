@@ -1,15 +1,23 @@
 local ChinaHat = {}
-
 function ChinaHat.Init(UI, Core, notify)
     local Players = Core.Services.Players
     local RunService = Core.Services.RunService
     local Workspace = Core.Services.Workspace
+    local UserInputService = Core.Services.UserInputService
     local camera = Workspace.CurrentCamera
-
     local LocalPlayer = Core.PlayerData.LocalPlayer
     local localCharacter = LocalPlayer.Character
     local localHumanoid = localCharacter and localCharacter:FindFirstChild("Humanoid")
-
+    
+    -- 🔧 ФИКС ШИФТЛОКА + АВТОПОДСТРОЙКА ПОЗИЦИЙ
+    local function getCharacterBottomTop(character)
+        if not character or not character:FindFirstChild("HumanoidRootPart") then return nil, nil end
+        local hrp = character.HumanoidRootPart
+        local bottom = hrp.Position - Vector3.new(0, hrp.Size.Y/2 + 0.1, 0)  -- Под ногами
+        local top = hrp.Position + Vector3.new(0, hrp.Size.Y/2 + 2.5, 0)     -- Над головой (Head + offset)
+        return bottom, top
+    end
+    
     local State = {
         ChinaHat = {
             HatActive = { Value = false, Default = false },
@@ -28,8 +36,7 @@ function ChinaHat.Init(UI, Core, notify)
             CircleGradientSpeed = { Value = 4, Default = 4 },
             CircleGradient = { Value = true, Default = true },
             CircleColor = { Value = Color3.fromRGB(0, 0, 255), Default = Color3.fromRGB(0, 0, 255) },
-            JumpAnimate = { Value = false, Default = false },
-            CircleYOffset = { Value = -3, Default = -3 }
+            JumpAnimate = { Value = false, Default = false }
         },
         Nimb = {
             NimbActive = { Value = false, Default = false },
@@ -37,11 +44,10 @@ function ChinaHat.Init(UI, Core, notify)
             NimbParts = { Value = 30, Default = 30 },
             NimbGradientSpeed = { Value = 4, Default = 4 },
             NimbGradient = { Value = true, Default = true },
-            NimbColor = { Value = Color3.fromRGB(0, 0, 255), Default = Color3.fromRGB(0, 0, 255) },
-            NimbYOffset = { Value = 2.7, Default = 2.7 }
+            NimbColor = { Value = Color3.fromRGB(0, 0, 255), Default = Color3.fromRGB(0, 0, 255) }
         }
     }
-
+    
     local hatLines = {}
     local hatCircleQuads = {}
     local circleQuads = {}
@@ -49,17 +55,23 @@ function ChinaHat.Init(UI, Core, notify)
     local jumpAnimationActive = false
     local renderConnection
     local humanoidConnection
-    local uiElements = {} -- Для хранения ссылок на элементы UI (слайдеры)
-
+    local uiElements = {}
+    
+    -- 🛠️ ШИФТЛОК ФИКС: Правильный WorldToViewportPoint
+    local function worldToScreenFix(pos)
+        local screenPos, onScreen = camera:WorldToViewportPoint(pos)
+        return screenPos, onScreen and screenPos.Z > 0
+    end
+    
     local function destroyParts(parts)
         for _, part in ipairs(parts) do
-            if part and part.Destroy then
-                part:Destroy()
+            if part and part.Remove then  -- Используем :Remove() для Drawing
+                part:Remove()
             end
         end
         table.clear(parts)
     end
-
+    
     local function interpolateColor(color1, color2, factor)
         return Color3.new(
             color1.R + (color2.R - color1.R) * factor,
@@ -67,12 +79,11 @@ function ChinaHat.Init(UI, Core, notify)
             color1.B + (color2.B - color1.B) * factor
         )
     end
-
+    
     local function createHat()
-        if not localCharacter or not localCharacter:FindFirstChild("Head") then return end
         destroyParts(hatLines)
         destroyParts(hatCircleQuads)
-        local head = localCharacter.Head
+        if not localCharacter or not localCharacter:FindFirstChild("Head") then return end
         for i = 1, State.ChinaHat.HatParts.Value do
             local line = Drawing.new("Line")
             line.Visible = false
@@ -96,10 +107,10 @@ function ChinaHat.Init(UI, Core, notify)
             end
         end
     end
-
+    
     local function createCircle()
-        if not localCharacter or not localCharacter:FindFirstChild("HumanoidRootPart") then return end
         destroyParts(circleQuads)
+        if not localCharacter or not localCharacter:FindFirstChild("HumanoidRootPart") then return end
         for i = 1, State.Circle.CircleParts.Value do
             local quad = Drawing.new("Quad")
             quad.Visible = false
@@ -111,10 +122,10 @@ function ChinaHat.Init(UI, Core, notify)
             table.insert(circleQuads, quad)
         end
     end
-
+    
     local function createNimb()
-        if not localCharacter or not localCharacter:FindFirstChild("HumanoidRootPart") then return end
         destroyParts(nimbQuads)
+        if not localCharacter or not localCharacter:FindFirstChild("HumanoidRootPart") then return end
         for i = 1, State.Nimb.NimbParts.Value do
             local quad = Drawing.new("Quad")
             quad.Visible = false
@@ -126,19 +137,21 @@ function ChinaHat.Init(UI, Core, notify)
             table.insert(nimbQuads, quad)
         end
     end
-
+    
     local function updateHat()
         if not State.ChinaHat.HatActive.Value or not localCharacter or not localCharacter:FindFirstChild("Head") then
-            destroyParts(hatLines)
-            destroyParts(hatCircleQuads)
+            for _, line in ipairs(hatLines) do line.Visible = false end
+            for _, quad in ipairs(hatCircleQuads) do quad.Visible = false end
             return
         end
+        
         local head = localCharacter.Head
-        local y = head.Position.Y + State.ChinaHat.HatYOffset.Value
+        local _, characterTop = getCharacterBottomTop(localCharacter)  -- Автоподстройка
+        local y = (characterTop or head.Position.Y) + State.ChinaHat.HatYOffset.Value
         local t = tick()
         local hatHeight = 2.15 * State.ChinaHat.HatScale.Value
         local hatRadius = 1.95 * State.ChinaHat.HatScale.Value
-
+        
         for i, line in ipairs(hatLines) do
             local angle = (i / State.ChinaHat.HatParts.Value) * 2 * math.pi
             local x = math.cos(angle) * hatRadius
@@ -148,11 +161,11 @@ function ChinaHat.Init(UI, Core, notify)
             local offset = 0.03
             local direction = (topPosition - basePosition).Unit
             local endPoint = topPosition + direction * offset
-
-            local screenStart, onScreenStart = camera:WorldToViewportPoint(basePosition)
-            local screenEnd, onScreenEnd = camera:WorldToViewportPoint(endPoint)
-
-            if onScreenStart and onScreenEnd and screenStart.Z > 0 and screenEnd.Z > 0 then
+            
+            local screenStart, onScreenStart = worldToScreenFix(basePosition)
+            local screenEnd, onScreenEnd = worldToScreenFix(endPoint)
+            
+            if onScreenStart and onScreenEnd then
                 line.From = Vector2.new(screenStart.X, screenStart.Y)
                 line.To = Vector2.new(screenEnd.X, screenEnd.Y)
                 line.Visible = true
@@ -166,38 +179,23 @@ function ChinaHat.Init(UI, Core, notify)
                 line.Visible = false
             end
         end
-
+        
+        -- Outline Circle (top ring)
         if State.ChinaHat.OutlineCircle.Value and #hatCircleQuads > 0 then
-            local topCenter = Vector3.new(0, 0, 0)
-            local visibleEnds = 0
-            for i, line in ipairs(hatLines) do
-                if line.Visible then
-                    local angle = (i / State.ChinaHat.HatParts.Value) * 2 * math.pi
-                    x = math.cos(angle) * hatRadius
-                    z = math.sin(angle) * hatRadius
-                    local topPosition = Vector3.new(head.Position.X + x, y - hatHeight / 3, head.Position.Z + z)
-                    topCenter = topCenter + topPosition
-                    visibleEnds = visibleEnds + 1
-                end
-            end
-            if visibleEnds > 0 then
-                topCenter = topCenter / visibleEnds
-            else
-                topCenter = Vector3.new(head.Position.X, y - hatHeight / 3, head.Position.Z)
-            end
-
-            local screenCenter, onScreenCenter = camera:WorldToViewportPoint(topCenter)
-            if onScreenCenter and screenCenter.Z > 0 then
+            local topCenter = Vector3.new(head.Position.X, y - hatHeight / 3, head.Position.Z)
+            local screenCenter, onScreenCenter = worldToScreenFix(topCenter)
+            if onScreenCenter then
                 local circleRadius = 2.0 * State.ChinaHat.HatScale.Value
                 for i, quad in ipairs(hatCircleQuads) do
                     local angle1 = ((i - 1) / #hatCircleQuads) * 2 * math.pi
                     local angle2 = (i / #hatCircleQuads) * 2 * math.pi
                     local point1 = topCenter + Vector3.new(math.cos(angle1) * circleRadius, 0, math.sin(angle1) * circleRadius)
                     local point2 = topCenter + Vector3.new(math.cos(angle2) * circleRadius, 0, math.sin(angle2) * circleRadius)
-                    local screenPoint1, onScreen1 = camera:WorldToViewportPoint(point1)
-                    local screenPoint2, onScreen2 = camera:WorldToViewportPoint(point2)
-
-                    if onScreen1 and onScreen2 and screenPoint1.Z > 0 and screenPoint2.Z > 0 then
+                    
+                    local screenPoint1, onScreen1 = worldToScreenFix(point1)
+                    local screenPoint2, onScreen2 = worldToScreenFix(point2)
+                    
+                    if onScreen1 and onScreen2 then
                         quad.PointA = Vector2.new(screenPoint1.X, screenPoint1.Y)
                         quad.PointB = Vector2.new(screenPoint2.X, screenPoint2.Y)
                         quad.PointC = Vector2.new(screenPoint2.X, screenPoint2.Y)
@@ -214,29 +212,27 @@ function ChinaHat.Init(UI, Core, notify)
                     end
                 end
             else
-                for _, quad in ipairs(hatCircleQuads) do
-                    quad.Visible = false
-                end
+                for _, quad in ipairs(hatCircleQuads) do quad.Visible = false end
             end
         end
     end
-
+    
     local function updateCircle()
-        if not State.Circle.CircleActive.Value or not localCharacter or not localCharacter:FindFirstChild("HumanoidRootPart") then
-            destroyParts(circleQuads)
+        if not State.Circle.CircleActive.Value or not localCharacter then
+            for _, quad in ipairs(circleQuads) do quad.Visible = false end
             return
         end
-        local rootPart = localCharacter.HumanoidRootPart
+        
+        local characterBottom, _ = getCharacterBottomTop(localCharacter)  -- Автоподстройка под ноги
+        local center = characterBottom or Vector3.new(0, 0, 0)
         local t = tick()
-        local center = Vector3.new(rootPart.Position.X, rootPart.Position.Y + State.Circle.CircleYOffset.Value, rootPart.Position.Z)
-        local screenCenter, onScreenCenter = camera:WorldToViewportPoint(center)
-        if not (onScreenCenter and screenCenter.Z > 0) then
-            for _, quad in ipairs(circleQuads) do
-                quad.Visible = false
-            end
+        local screenCenter, onScreenCenter = worldToScreenFix(center)
+        
+        if not onScreenCenter then
+            for _, quad in ipairs(circleQuads) do quad.Visible = false end
             return
         end
-
+        
         local circleRadius = State.Circle.CircleRadius.Value
         local partsCount = #circleQuads
         for i, quad in ipairs(circleQuads) do
@@ -244,10 +240,11 @@ function ChinaHat.Init(UI, Core, notify)
             local angle2 = (i / partsCount) * 2 * math.pi
             local point1 = center + Vector3.new(math.cos(angle1) * circleRadius, 0, math.sin(angle1) * circleRadius)
             local point2 = center + Vector3.new(math.cos(angle2) * circleRadius, 0, math.sin(angle2) * circleRadius)
-            local screenPoint1, onScreen1 = camera:WorldToViewportPoint(point1)
-            local screenPoint2, onScreen2 = camera:WorldToViewportPoint(point2)
-
-            if onScreen1 and onScreen2 and screenPoint1.Z > 0 and screenPoint2.Z > 0 then
+            
+            local screenPoint1, onScreen1 = worldToScreenFix(point1)
+            local screenPoint2, onScreen2 = worldToScreenFix(point2)
+            
+            if onScreen1 and onScreen2 then
                 quad.PointA = Vector2.new(screenPoint1.X, screenPoint1.Y)
                 quad.PointB = Vector2.new(screenPoint2.X, screenPoint2.Y)
                 quad.PointC = Vector2.new(screenPoint2.X, screenPoint2.Y)
@@ -264,23 +261,23 @@ function ChinaHat.Init(UI, Core, notify)
             end
         end
     end
-
+    
     local function updateNimb()
-        if not State.Nimb.NimbActive.Value or not localCharacter or not localCharacter:FindFirstChild("HumanoidRootPart") then
-            destroyParts(nimbQuads)
+        if not State.Nimb.NimbActive.Value or not localCharacter then
+            for _, quad in ipairs(nimbQuads) do quad.Visible = false end
             return
         end
-        local rootPart = localCharacter.HumanoidRootPart
+        
+        local _, characterTop = getCharacterBottomTop(localCharacter)  -- Автоподстройка над головой
+        local center = characterTop or Vector3.new(0, 0, 0)
         local t = tick()
-        local center = Vector3.new(rootPart.Position.X, rootPart.Position.Y + State.Nimb.NimbYOffset.Value, rootPart.Position.Z)
-        local screenCenter, onScreenCenter = camera:WorldToViewportPoint(center)
-        if not (onScreenCenter and screenCenter.Z > 0) then
-            for _, quad in ipairs(nimbQuads) do
-                quad.Visible = false
-            end
+        local screenCenter, onScreenCenter = worldToScreenFix(center)
+        
+        if not onScreenCenter then
+            for _, quad in ipairs(nimbQuads) do quad.Visible = false end
             return
         end
-
+        
         local nimbRadius = State.Nimb.NimbRadius.Value
         local partsCount = #nimbQuads
         for i, quad in ipairs(nimbQuads) do
@@ -288,10 +285,11 @@ function ChinaHat.Init(UI, Core, notify)
             local angle2 = (i / partsCount) * 2 * math.pi
             local point1 = center + Vector3.new(math.cos(angle1) * nimbRadius, 0, math.sin(angle1) * nimbRadius)
             local point2 = center + Vector3.new(math.cos(angle2) * nimbRadius, 0, math.sin(angle2) * nimbRadius)
-            local screenPoint1, onScreen1 = camera:WorldToViewportPoint(point1)
-            local screenPoint2, onScreen2 = camera:WorldToViewportPoint(point2)
-
-            if onScreen1 and onScreen2 and screenPoint1.Z > 0 and screenPoint2.Z > 0 then
+            
+            local screenPoint1, onScreen1 = worldToScreenFix(point1)
+            local screenPoint2, onScreen2 = worldToScreenFix(point2)
+            
+            if onScreen1 and onScreen2 then
                 quad.PointA = Vector2.new(screenPoint1.X, screenPoint1.Y)
                 quad.PointB = Vector2.new(screenPoint2.X, screenPoint2.Y)
                 quad.PointC = Vector2.new(screenPoint2.X, screenPoint2.Y)
@@ -308,7 +306,7 @@ function ChinaHat.Init(UI, Core, notify)
             end
         end
     end
-
+    
     local function animateJump()
         if not State.Circle.JumpAnimate.Value or #circleQuads == 0 or jumpAnimationActive then return end
         jumpAnimationActive = true
@@ -326,95 +324,62 @@ function ChinaHat.Init(UI, Core, notify)
         State.Circle.CircleRadius.Value = initialRadius
         jumpAnimationActive = false
     end
-
+    
+    -- Toggles (без изменений)
     local function toggleHat(value)
         State.ChinaHat.HatActive.Value = value
-        if value then
-            createHat()
-            notify("ChinaHat", "Hat Enabled", true)
-        else
-            destroyParts(hatLines)
-            destroyParts(hatCircleQuads)
-            notify("ChinaHat", "Hat Disabled", true)
-        end
+        if value then createHat() else destroyParts(hatLines); destroyParts(hatCircleQuads) end
+        notify("ChinaHat", "Hat " .. (value and "Enabled" or "Disabled"), true)
     end
-
+    
     local function toggleCircle(value)
         State.Circle.CircleActive.Value = value
-        if value then
-            createCircle()
-            notify("Circle", "Circle Enabled", true)
-        else
-            destroyParts(circleQuads)
-            notify("Circle", "Circle Disabled", true)
-        end
+        if value then createCircle() else destroyParts(circleQuads) end
+        notify("Circle", "Circle " .. (value and "Enabled" or "Disabled"), true)
     end
-
+    
     local function toggleNimb(value)
         State.Nimb.NimbActive.Value = value
-        if value then
-            createNimb()
-            notify("Nimb", "Nimb Enabled", true)
-        else
-            destroyParts(nimbQuads)
-            notify("Nimb", "Nimb Disabled", true)
-        end
+        if value then createNimb() else destroyParts(nimbQuads) end
+        notify("Nimb", "Nimb " .. (value and "Enabled" or "Disabled"), true)
     end
-
+    
     local function onStateChanged(oldState, newState)
         if State.Circle.JumpAnimate.Value and newState == Enum.HumanoidStateType.Jumping and not jumpAnimationActive then
             animateJump()
         end
     end
-
+    
     local function connectHumanoid(character)
-        if humanoidConnection then
-            humanoidConnection:Disconnect()
-        end
+        if humanoidConnection then humanoidConnection:Disconnect() end
         localCharacter = character
         local humanoid = character:WaitForChild("Humanoid", 5)
         if humanoid then
             localHumanoid = humanoid
             humanoidConnection = humanoid.StateChanged:Connect(onStateChanged)
         end
-        -- Воссоздаем элементы, если они активны
-        if State.ChinaHat.HatActive.Value then
-            createHat()
-        end
-        if State.Circle.CircleActive.Value then
-            createCircle()
-        end
-        if State.Nimb.NimbActive.Value then
-            createNimb()
-        end
+        if State.ChinaHat.HatActive.Value then createHat() end
+        if State.Circle.CircleActive.Value then createCircle() end
+        if State.Nimb.NimbActive.Value then createNimb() end
     end
-
+    
+    -- ✅ ГЛАВНЫЙ РЕНДЕР (RenderStepped с фиксами)
     renderConnection = RunService.RenderStepped:Connect(function()
         if localCharacter then
             updateHat()
             updateCircle()
             updateNimb()
         else
-            -- Не уничтожаем части, а просто скрываем их
-            for _, line in ipairs(hatLines) do
-                line.Visible = false
-            end
-            for _, quad in ipairs(hatCircleQuads) do
-                quad.Visible = false
-            end
-            for _, quad in ipairs(circleQuads) do
-                quad.Visible = false
-            end
-            for _, quad in ipairs(nimbQuads) do
-                quad.Visible = false
-            end
+            for _, line in ipairs(hatLines) do line.Visible = false end
+            for _, quad in ipairs(hatCircleQuads) do quad.Visible = false end
+            for _, quad in ipairs(circleQuads) do quad.Visible = false end
+            for _, quad in ipairs(nimbQuads) do quad.Visible = false end
         end
     end)
-
+    
     LocalPlayer.CharacterAdded:Connect(connectHumanoid)
-    if localCharacter then
-        connectHumanoid(localCharacter)
-    end
+    if localCharacter then connectHumanoid(localCharacter) end
+    
 
     if UI.Tabs and UI.Tabs.Visuals then
         local chinaHatSection = UI.Sections.ChinaHat or UI.Tabs.Visuals:Section({ Name = "ChinaHat", Side = "Left" })
@@ -721,23 +686,16 @@ function ChinaHat.Init(UI, Core, notify)
             end
         })
     end
-
+    
     function ChinaHat:Destroy()
         destroyParts(hatLines)
         destroyParts(hatCircleQuads)
         destroyParts(circleQuads)
         destroyParts(nimbQuads)
-        if renderConnection then
-            renderConnection:Disconnect()
-        end
-        if humanoidConnection then
-            humanoidConnection:Disconnect()
-        end
+        if renderConnection then renderConnection:Disconnect() end
+        if humanoidConnection then humanoidConnection:Disconnect() end
     end
-
+    
     return ChinaHat
 end
-
 return ChinaHat
-
-
