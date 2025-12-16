@@ -394,7 +394,7 @@ local uiElements = {}
 function BallTrajectoryModule.SetupUI(UI)
     if UI.Sections.TrajectoryPrediction then
         local section = UI.Sections.TrajectoryPrediction
-        section:Header({ Name = "Ball Trajectory Visualizer v6" })
+        section:Header({ Name = "Trajectory Visualizer" })
         section:Divider()
         uiElements.Enabled = section:Toggle({
             Name = "Enabled",
