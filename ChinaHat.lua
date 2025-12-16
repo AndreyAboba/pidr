@@ -1,5 +1,5 @@
 local ChinaHat = {}
-print('2')
+
 function ChinaHat.Init(UI, Core, notify)
     local Players = Core.Services.Players
     local RunService = Core.Services.RunService
@@ -74,18 +74,6 @@ function ChinaHat.Init(UI, Core, notify)
         )
     end
 
-    -- Функция для определения высоты персонажа
-    local function getCharacterHeight()
-        if not localCharacter then return 5 end
-        
-        local humanoid = localCharacter:FindFirstChild("Humanoid")
-        if humanoid then
-            return humanoid.HipHeight + 2.5 -- Более точное определение высоты
-        end
-        
-        return 5 -- Значение по умолчанию
-    end
-
     -- Функция для определения, включен ли ShiftLock
     local function updateShiftLockState()
         if camera and localCharacter and localCharacter:FindFirstChild("HumanoidRootPart") then
@@ -96,13 +84,12 @@ function ChinaHat.Init(UI, Core, notify)
             local distance = (cameraPos - characterPos).Magnitude
             lastCameraDistance = distance
             
-            -- Определяем ShiftLock по расстоянию и углу камеры
-            -- В Roblox классический режим от 3-го лица имеет расстояние ~12-20
+            -- Определяем ShiftLock по расстоянию (режим от 3-го лица)
             isShiftLockEnabled = distance > 10
             
-            -- Также проверяем тип камеры, если доступно
+            -- Дополнительная проверка типа камеры
             if camera.CameraType then
-                isShiftLockEnabled = camera.CameraType == Enum.CameraType.Scriptable or distance > 10
+                isShiftLockEnabled = camera.CameraType == Enum.CameraType.Scriptable or camera.CameraType == Enum.CameraType.Custom or distance > 10
             end
         else
             isShiftLockEnabled = false
@@ -287,18 +274,17 @@ function ChinaHat.Init(UI, Core, notify)
         updateShiftLockState()
         
         -- Фиксированная позиция Circle под ногами
-        -- Вместо raycast используем фиксированное смещение от HumanoidRootPart
         local circleHeight
         
         if isShiftLockEnabled then
-            -- В режиме ShiftLock располагаем Circle на "уровне ног"
-            -- Используем смещение от HumanoidRootPart вниз
-            -- Для большинства персонажей это примерно Humanoid.HipHeight * 0.8
+            -- В режиме ShiftLock располагаем Circle значительно ниже (уровень земли)
             if localCharacter:FindFirstChild("Humanoid") then
                 local humanoid = localCharacter.Humanoid
+                -- Используем коэффициент 1.4 для большего смещения вниз
                 circleHeight = rootPart.Position.Y - (humanoid.HipHeight * 1.4)
             else
-                circleHeight = rootPart.Position.Y - 2 -- Значение по умолчанию
+                -- Для резервного варианта используем большее смещение
+                circleHeight = rootPart.Position.Y - 3.5
             end
         else
             -- В обычном режиме используем настроенное смещение
@@ -716,6 +702,17 @@ function ChinaHat.Init(UI, Core, notify)
                 notify("Circle", "Jump Animation: " .. (value and "Enabled" or "Disabled"), true)
             end,
         }, 'JumpAnimate')
+        uiElements.CircleYOffset = circleSection:Slider({
+            Name = "Y Offset",
+            Minimum = -5,
+            Maximum = 0,
+            Default = State.Circle.CircleYOffset.Default,
+            Precision = 1,
+            Callback = function(value)
+                State.Circle.CircleYOffset.Value = value
+                notify("Circle", "Circle Y Offset set to: " .. value, false)
+            end,
+        }, 'CircleYOffset')
 
         local nimbSection = UI.Sections.Nimb or UI.Tabs.Visuals:Section({ Name = "Nimb", Side = "Right" })
         UI.Sections.Nimb = nimbSection
@@ -820,6 +817,7 @@ function ChinaHat.Init(UI, Core, notify)
                 State.Circle.CircleRadius.Value = uiElements.CircleRadius:GetValue()
                 State.Circle.CircleParts.Value = uiElements.CircleParts:GetValue()
                 State.Circle.CircleGradientSpeed.Value = uiElements.CircleGradientSpeed:GetValue()
+                State.Circle.CircleYOffset.Value = uiElements.CircleYOffset:GetValue()
                 if State.Circle.CircleActive.Value then
                     createCircle()
                 end
@@ -857,6 +855,3 @@ function ChinaHat.Init(UI, Core, notify)
 end
 
 return ChinaHat
-
-
-
