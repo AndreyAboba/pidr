@@ -1,5 +1,5 @@
 local ChinaHat = {}
-
+print('2')
 function ChinaHat.Init(UI, Core, notify)
     local Players = Core.Services.Players
     local RunService = Core.Services.RunService
@@ -296,7 +296,7 @@ function ChinaHat.Init(UI, Core, notify)
             -- Для большинства персонажей это примерно Humanoid.HipHeight * 0.8
             if localCharacter:FindFirstChild("Humanoid") then
                 local humanoid = localCharacter.Humanoid
-                circleHeight = rootPart.Position.Y - (humanoid.HipHeight * 0.8)
+                circleHeight = rootPart.Position.Y - (humanoid.HipHeight * 0.95)
             else
                 circleHeight = rootPart.Position.Y - 2 -- Значение по умолчанию
             end
@@ -857,3 +857,4 @@ function ChinaHat.Init(UI, Core, notify)
 end
 
 return ChinaHat
+
