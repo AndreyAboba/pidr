@@ -92,7 +92,8 @@ local FlyStatus = {
     VerticalSpeed = MovementEnhancements.Config.Fly.VerticalSpeed,
     VerticalKeys = MovementEnhancements.Config.Fly.VerticalKeys,
     IsFlying = false,
-    VerticalDirection = 0
+    VerticalDirection = 0,
+    FlightCFrame = nil
 }
 
 local InfStaminaStatus = {
@@ -119,7 +120,7 @@ local AntiAFKStatus = {
     LastInputTime = os.time(),
     InputConnection = nil,
     HeartbeatConnection = nil,
-    AFKRemoteHook = nil
+    OriginalFireServer = nil
 }
 
 -- Helper functions
@@ -372,7 +373,7 @@ Speed.SetSmoothnessFactor = function(value)
     notify("Speed", "Smoothness Factor set to: " .. SpeedStatus.SmoothnessFactor, false)
 end
 
--- Fly Module (ПРОСТОЙ И ЭФФЕКТИВНЫЙ)
+-- Fly Module (ИСПРАВЛЕННЫЙ - не падает на месте)
 local Fly = {}
 Fly.GetFlyDirection = function()
     local moveDirection = Vector3.new(0, 0, 0)
@@ -426,6 +427,9 @@ Fly.Start = function()
     FlyStatus.Running = true
     FlyStatus.IsFlying = true
     
+    -- Сохраняем начальный CFrame для стабилизации
+    FlyStatus.FlightCFrame = rootPart.CFrame
+    
     notify("Fly", "Started with Speed: " .. FlyStatus.Speed, true)
     
     -- Main fly loop using CFrame
@@ -442,6 +446,21 @@ Fly.Start = function()
         local flyDirection = Fly.GetFlyDirection()
         local verticalDirection = Fly.GetVerticalDirection()
         
+        -- If no movement input, maintain current position
+        if flyDirection.Magnitude == 0 and verticalDirection == 0 then
+            -- Просто обновляем вращение для стабилизации
+            local camera = Services.Workspace.CurrentCamera
+            if camera then
+                local lookVector = camera.CFrame.LookVector
+                local horizontalLook = Vector3.new(lookVector.X, 0, lookVector.Z)
+                if horizontalLook.Magnitude > 0 then
+                    horizontalLook = horizontalLook.Unit
+                    currentRootPart.CFrame = CFrame.new(currentRootPart.Position, currentRootPart.Position + horizontalLook)
+                end
+            end
+            return
+        end
+        
         -- Calculate movement vector
         local movement = Vector3.new(0, 0, 0)
         
@@ -455,17 +474,28 @@ Fly.Start = function()
         
         -- Apply movement using CFrame
         if movement.Magnitude > 0 then
-            local newCFrame = currentRootPart.CFrame + movement
+            local newPosition = currentRootPart.Position + movement
             
-            -- Keep character upright
-            local lookVector = Services.Workspace.CurrentCamera.CFrame.LookVector
-            local horizontalLook = Vector3.new(lookVector.X, 0, lookVector.Z)
-            if horizontalLook.Magnitude > 0 then
-                newCFrame = CFrame.new(newCFrame.Position, newCFrame.Position + horizontalLook)
+            -- Keep character looking forward
+            local camera = Services.Workspace.CurrentCamera
+            if camera then
+                local lookVector = camera.CFrame.LookVector
+                local horizontalLook = Vector3.new(lookVector.X, 0, lookVector.Z)
+                if horizontalLook.Magnitude > 0 then
+                    currentRootPart.CFrame = CFrame.new(newPosition, newPosition + horizontalLook)
+                else
+                    currentRootPart.CFrame = CFrame.new(newPosition)
+                end
+            else
+                currentRootPart.CFrame = CFrame.new(newPosition)
             end
             
-            currentRootPart.CFrame = newCFrame
+            -- Обнуляем скорость чтобы не падать
             currentRootPart.Velocity = Vector3.new(0, 0, 0)
+            currentRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            
+            -- Обновляем сохраненный CFrame
+            FlyStatus.FlightCFrame = currentRootPart.CFrame
         end
     end)
 end
@@ -478,6 +508,14 @@ Fly.Stop = function()
     
     FlyStatus.Running = false
     FlyStatus.IsFlying = false
+    FlyStatus.FlightCFrame = nil
+    
+    -- Восстанавливаем физику
+    local humanoid, rootPart = getCharacterData()
+    if humanoid then
+        humanoid:ChangeState(Enum.HumanoidStateType.Landed)
+    end
+    
     notify("Fly", "Stopped", true)
 end
 
@@ -662,7 +700,7 @@ InfStamina.SetRestoreGui = function(enabled)
     notify("InfStamina", "Restore GUI " .. (enabled and "enabled" or "disabled"), false)
 end
 
--- AntiAFK Module с hookmetamethod
+-- AntiAFK Module с правильным hookmetamethod
 local AntiAFK = {}
 
 AntiAFK.Start = function()
@@ -671,40 +709,45 @@ AntiAFK.Start = function()
     AntiAFKStatus.Running = true
     AntiAFKStatus.LastInputTime = os.time()
     
-    -- Хук для AFKRemote с использованием hookmetamethod
-    local success, remote = pcall(function()
-        return game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("AFKRemote")
+    -- Находим AFKRemote
+    local afkRemote
+    local success, err = pcall(function()
+        afkRemote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("AFKRemote")
     end)
     
-    if success and remote then
-        local mt = getrawmetatable(remote)
-        if mt then
-            local oldNamecall
-            oldNamecall = hookmetamethod(mt, "__namecall", function(self, ...)
-                local method = getnamecallmethod()
-                local args = {...}
-                
-                if self == remote and method == "FireServer" then
-                    if AntiAFKStatus.Enabled then
-                        if args[1] == true then -- AFK активация
-                            notify("AntiAFK", "Blocked AFK activation", false)
-                            return nil
-                        end
-                    end
-                end
-                
-                return oldNamecall(self, ...)
-            end)
-            AntiAFKStatus.AFKRemoteHook = oldNamecall
-        end
+    if not success or not afkRemote then
+        notify("AntiAFK", "AFKRemote not found", true)
+        return
     end
+    
+    -- Используем правильный hookmetamethod
+    local originalNamecall
+    originalNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+        local args = {...}
+        local method = getnamecallmethod()
+        
+        -- Проверяем, если это AFKRemote и вызывается FireServer
+        if self == afkRemote and method == "FireServer" then
+            if AntiAFKStatus.Enabled then
+                if args[1] == true then -- AFK активация
+                    notify("AntiAFK", "Blocked AFK activation", false)
+                    return nil
+                end
+            end
+        end
+        
+        -- Возвращаем оригинальный вызов
+        return originalNamecall(self, ...)
+    end)
+    
+    AntiAFKStatus.OriginalFireServer = originalNamecall
     
     -- Обработчик ввода
     AntiAFKStatus.InputConnection = Services.UserInputService.InputBegan:Connect(function()
         AntiAFKStatus.LastInputTime = os.time()
     end)
     
-    -- Основной цикл
+    -- Основной цикл для симуляции ввода
     AntiAFKStatus.HeartbeatConnection = Services.RunService.Heartbeat:Connect(function()
         if not AntiAFKStatus.Enabled then
             AntiAFKStatus.Running = false
@@ -717,12 +760,20 @@ AntiAFK.Start = function()
         if timeSinceLastInput > AntiAFKStatus.CustomAFKTime then
             AntiAFKStatus.LastInputTime = currentTime
             
-            -- Симуляция ввода через VirtualInputManager
-            local virtualInput = game:GetService("VirtualInputManager")
-            if virtualInput then
-                virtualInput:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-                task.wait(0.05)
-                virtualInput:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+            -- Симуляция ввода
+            if Services.UserInputService then
+                -- Симулируем движение мыши
+                Services.UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+                
+                -- Симулируем нажатие клавиши
+                task.spawn(function()
+                    local virtualInput = game:GetService("VirtualInputManager")
+                    if virtualInput then
+                        virtualInput:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+                        task.wait(0.05)
+                        virtualInput:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+                    end
+                end)
             end
             
             notify("AntiAFK", "Prevented AFK kick", false)
@@ -743,13 +794,10 @@ AntiAFK.Stop = function()
         AntiAFKStatus.HeartbeatConnection = nil
     end
     
-    -- Восстановление хука если был установлен
-    if AntiAFKStatus.AFKRemoteHook then
-        local mt = getrawmetatable(game:GetService("ReplicatedStorage").Remotes.AFKRemote)
-        if mt then
-            hookmetamethod(mt, "__namecall", AntiAFKStatus.AFKRemoteHook)
-        end
-        AntiAFKStatus.AFKRemoteHook = nil
+    -- Восстанавливаем оригинальный __namecall
+    if AntiAFKStatus.OriginalFireServer then
+        hookmetamethod(game, "__namecall", AntiAFKStatus.OriginalFireServer)
+        AntiAFKStatus.OriginalFireServer = nil
     end
     
     AntiAFKStatus.Running = false
@@ -764,12 +812,10 @@ end
 
 -- UI Setup
 local function SetupUI(UI)
-    local uiElements = {}
-    
     -- Timer Section
     if UI.Sections.Timer then
         UI.Sections.Timer:Header({ Name = "Timer" })
-        uiElements.TimerEnabled = UI.Sections.Timer:Toggle({
+        UI.Sections.Timer:Toggle({
             Name = "Enabled",
             Default = MovementEnhancements.Config.Timer.Enabled,
             Callback = function(value)
@@ -779,7 +825,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.TimerSpeed = UI.Sections.Timer:Slider({
+        UI.Sections.Timer:Slider({
             Name = "Speed",
             Minimum = 1,
             Maximum = 15,
@@ -790,7 +836,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.TimerKey = UI.Sections.Timer:Keybind({
+        UI.Sections.Timer:Keybind({
             Name = "Toggle Key",
             Default = MovementEnhancements.Config.Timer.ToggleKey,
             Callback = function(value)
@@ -809,7 +855,7 @@ local function SetupUI(UI)
     -- Disabler Section
     if UI.Sections.Disabler then
         UI.Sections.Disabler:Header({ Name = "Disabler" })
-        uiElements.DisablerEnabled = UI.Sections.Disabler:Toggle({
+        UI.Sections.Disabler:Toggle({
             Name = "Enabled",
             Default = MovementEnhancements.Config.Disabler.Enabled,
             Callback = function(value)
@@ -819,7 +865,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.DisablerKey = UI.Sections.Disabler:Keybind({
+        UI.Sections.Disabler:Keybind({
             Name = "Toggle Key",
             Default = MovementEnhancements.Config.Disabler.ToggleKey,
             Callback = function(value)
@@ -838,7 +884,7 @@ local function SetupUI(UI)
     -- Speed Section
     if UI.Sections.Speed then
         UI.Sections.Speed:Header({ Name = "Speed" })
-        uiElements.SpeedEnabled = UI.Sections.Speed:Toggle({
+        UI.Sections.Speed:Toggle({
             Name = "Enabled",
             Default = MovementEnhancements.Config.Speed.Enabled,
             Callback = function(value)
@@ -848,7 +894,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.SpeedAutoJump = UI.Sections.Speed:Toggle({
+        UI.Sections.Speed:Toggle({
             Name = "Auto Jump",
             Default = MovementEnhancements.Config.Speed.AutoJump,
             Callback = function(value)
@@ -857,7 +903,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.SpeedMethod = UI.Sections.Speed:Dropdown({
+        UI.Sections.Speed:Dropdown({
             Name = "Method",
             Options = {"CFrame", "PulseTP"},
             Default = MovementEnhancements.Config.Speed.Method,
@@ -866,7 +912,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.Speed = UI.Sections.Speed:Slider({
+        UI.Sections.Speed:Slider({
             Name = "Speed",
             Minimum = 16,
             Maximum = 250,
@@ -877,7 +923,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.SpeedJumpInterval = UI.Sections.Speed:Slider({
+        UI.Sections.Speed:Slider({
             Name = "Jump Interval",
             Minimum = 0.1,
             Maximum = 2,
@@ -890,7 +936,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.SpeedPulseTPDistance = UI.Sections.Speed:Slider({
+        UI.Sections.Speed:Slider({
             Name = "Pulse TP Distance",
             Minimum = 1,
             Maximum = 20,
@@ -901,7 +947,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.SpeedPulseTPFrequency = UI.Sections.Speed:Slider({
+        UI.Sections.Speed:Slider({
             Name = "Pulse TP Frequency",
             Minimum = 0.1,
             Maximum = 2,
@@ -912,7 +958,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.SpeedSmoothnessFactor = UI.Sections.Speed:Slider({
+        UI.Sections.Speed:Slider({
             Name = "Smoothness Factor",
             Minimum = 0,
             Maximum = 1,
@@ -923,7 +969,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.SpeedKey = UI.Sections.Speed:Keybind({
+        UI.Sections.Speed:Keybind({
             Name = "Toggle Key",
             Default = MovementEnhancements.Config.Speed.ToggleKey,
             Callback = function(value)
@@ -942,7 +988,7 @@ local function SetupUI(UI)
     -- Fly Section
     if UI.Sections.Fly then
         UI.Sections.Fly:Header({ Name = "Fly" })
-        uiElements.FlyEnabled = UI.Sections.Fly:Toggle({
+        UI.Sections.Fly:Toggle({
             Name = "Enabled",
             Default = MovementEnhancements.Config.Fly.Enabled,
             Callback = function(value)
@@ -952,7 +998,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.FlySpeed = UI.Sections.Fly:Slider({
+        UI.Sections.Fly:Slider({
             Name = "Speed",
             Minimum = 10,
             Maximum = 200,
@@ -963,7 +1009,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.FlyVerticalSpeed = UI.Sections.Fly:Slider({
+        UI.Sections.Fly:Slider({
             Name = "Vertical Speed",
             Minimum = 10,
             Maximum = 200,
@@ -974,7 +1020,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.FlyVerticalKeys = UI.Sections.Fly:Dropdown({
+        UI.Sections.Fly:Dropdown({
             Name = "Vertical Keys",
             Options = {"E/Q", "Space/LeftControl"},
             Default = MovementEnhancements.Config.Fly.VerticalKeys,
@@ -983,7 +1029,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.FlyKey = UI.Sections.Fly:Keybind({
+        UI.Sections.Fly:Keybind({
             Name = "Toggle Key",
             Default = MovementEnhancements.Config.Fly.ToggleKey,
             Callback = function(value)
@@ -1003,7 +1049,7 @@ local function SetupUI(UI)
     if UI.Sections.InfStamina then
         UI.Sections.InfStamina:Header({ Name = "Infinity Stamina" })
         
-        uiElements.InfStaminaEnabled = UI.Sections.InfStamina:Toggle({
+        UI.Sections.InfStamina:Toggle({
             Name = "Enabled",
             Default = MovementEnhancements.Config.InfStamina.Enabled,
             Callback = function(value)
@@ -1013,7 +1059,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.InfStaminaAlwaysSprint = UI.Sections.InfStamina:Toggle({
+        UI.Sections.InfStamina:Toggle({
             Name = "Always Sprint",
             Default = MovementEnhancements.Config.InfStamina.AlwaysSprint,
             Callback = function(value)
@@ -1021,7 +1067,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.InfStaminaRestoreGui = UI.Sections.InfStamina:Toggle({
+        UI.Sections.InfStamina:Toggle({
             Name = "Restore GUI",
             Default = MovementEnhancements.Config.InfStamina.RestoreGui,
             Callback = function(value)
@@ -1029,7 +1075,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.InfStaminaSprintKey = UI.Sections.InfStamina:Dropdown({
+        UI.Sections.InfStamina:Dropdown({
             Name = "Sprint Key",
             Options = {"LeftShift", "Space", "C", "V"},
             Default = MovementEnhancements.Config.InfStamina.SprintKey,
@@ -1038,7 +1084,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.InfStaminaKey = UI.Sections.InfStamina:Keybind({
+        UI.Sections.InfStamina:Keybind({
             Name = "Toggle Key",
             Default = MovementEnhancements.Config.InfStamina.ToggleKey,
             Callback = function(value)
@@ -1058,7 +1104,7 @@ local function SetupUI(UI)
     if UI.Sections.AntiAFK then
         UI.Sections.AntiAFK:Header({ Name = "Anti-AFK" })
         
-        uiElements.AntiAFKEnabled = UI.Sections.AntiAFK:Toggle({
+        UI.Sections.AntiAFK:Toggle({
             Name = "Enabled",
             Default = MovementEnhancements.Config.AntiAFK.Enabled,
             Callback = function(value)
@@ -1068,7 +1114,7 @@ local function SetupUI(UI)
             end
         })
         
-        uiElements.AntiAFKTime = UI.Sections.AntiAFK:Slider({
+        UI.Sections.AntiAFK:Slider({
             Name = "AFK Time (seconds)",
             Minimum = 30,
             Maximum = 300,
