@@ -665,7 +665,6 @@ function ChinaHat.Init(UI, Core, notify)
                 State.Nimb.NimbRadius.Value = uiElements.NimbRadius:GetValue()
                 State.Nimb.NimbParts.Value = uiElements.NimbParts:GetValue()
                 State.Nimb.NimbGradientSpeed.Value = uiElements.NimbGradientSpeed:GetValue()
-                State.Nimb.NimbYOffset.Value = uiElements.NimbYOffset:GetValue()
                 if State.Nimb.NimbActive.Value then
                     createNimb()
                 end
@@ -687,3 +686,4 @@ function ChinaHat.Init(UI, Core, notify)
     return ChinaHat
 end
 return ChinaHat
+
