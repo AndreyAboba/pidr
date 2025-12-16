@@ -44,9 +44,18 @@ MovementEnhancements.Config = {
         ToggleKey = nil,
         WalkSpeed = 21,
         RunSpeed = 35
+    },
+    AntiAFK = {
+        Enabled = false,
+        CustomAFKTime = 60,
+        ShowWarning = true,
+        ToggleKey = nil,
+        BlockAFKRemote = true,
+        AutoReconnect = false
     }
 }
 
+-- Status tables
 local TimerStatus = {
     Running = false,
     Connection = nil,
@@ -92,10 +101,8 @@ local FlyStatus = {
     UseBodyVelocity = MovementEnhancements.Config.Fly.UseBodyVelocity,
     BodyVelocity = nil,
     BodyGyro = nil,
-    FlightDirection = Vector3.new(0, 0, 0),
-    VerticalDirection = 0,
-    CurrentVelocity = Vector3.new(0, 0, 0),
-    LastMousePos = nil
+    BodyPosition = nil,
+    CharacterConnection = nil
 }
 
 local InfStaminaStatus = {
@@ -114,7 +121,24 @@ local InfStaminaStatus = {
     SpeedUpdateConnection = nil
 }
 
--- Вспомогательные функции
+local AntiAFKStatus = {
+    Running = false,
+    Connection = nil,
+    Key = MovementEnhancements.Config.AntiAFK.ToggleKey,
+    Enabled = MovementEnhancements.Config.AntiAFK.Enabled,
+    CustomAFKTime = MovementEnhancements.Config.AntiAFK.CustomAFKTime,
+    ShowWarning = MovementEnhancements.Config.AntiAFK.ShowWarning,
+    BlockAFKRemote = MovementEnhancements.Config.AntiAFK.BlockAFKRemote,
+    AutoReconnect = MovementEnhancements.Config.AntiAFK.AutoReconnect,
+    LastInputTime = os.time(),
+    AFKRemoteBlocked = false,
+    OriginalFireServer = nil,
+    AFKWarningFrame = nil,
+    InputConnection = nil,
+    HeartbeatConnection = nil
+}
+
+-- Helper functions
 local function getCharacterData()
     local character = LocalPlayerObj and LocalPlayerObj.Character
     if not character then return nil, nil end
@@ -247,7 +271,10 @@ end
 Disabler.Start = function()
     if DisablerStatus.Running or not LocalPlayerObj then return end
     DisablerStatus.Running = true
-    DisablerStatus.Connection = LocalPlayerObj.CharacterAdded:Connect(Disabler.DisableSignals)
+    DisablerStatus.Connection = LocalPlayerObj.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        Disabler.DisableSignals(char)
+    end)
     if LocalPlayerObj.Character then
         Disabler.DisableSignals(LocalPlayerObj.Character)
     end
@@ -370,26 +397,31 @@ Fly.GetFlyDirection = function()
         local camera = Services.Workspace.CurrentCamera
         local cameraCFrame = camera.CFrame
         
-        -- Получаем направление камеры
-        local cameraForward = cameraCFrame.LookVector
-        local cameraRight = cameraCFrame.RightVector
+        local cameraForward = Vector3.new(cameraCFrame.LookVector.X, 0, cameraCFrame.LookVector.Z)
+        local cameraRight = Vector3.new(cameraCFrame.RightVector.X, 0, cameraCFrame.RightVector.Z)
         
-        -- Обрабатываем ввод WASD
+        if cameraForward.Magnitude > 0 then cameraForward = cameraForward.Unit end
+        if cameraRight.Magnitude > 0 then cameraRight = cameraRight.Unit end
+        
         local w = Services.UserInputService:IsKeyDown(Enum.KeyCode.W) and 1 or 0
         local s = Services.UserInputService:IsKeyDown(Enum.KeyCode.S) and -1 or 0
         local a = Services.UserInputService:IsKeyDown(Enum.KeyCode.A) and -1 or 0
         local d = Services.UserInputService:IsKeyDown(Enum.KeyCode.D) and 1 or 0
         
-        -- Комбинируем направления
-        if w ~= 0 or s ~= 0 then
-            moveDirection = moveDirection + (cameraForward * (w + s))
-        end
-        if a ~= 0 or d ~= 0 then
-            moveDirection = moveDirection + (cameraRight * (a + d))
+        local inputVector = Vector3.new(a + d, 0, w + s)
+        if inputVector.Magnitude > 0 then
+            inputVector = inputVector.Unit
+            moveDirection = (cameraForward * inputVector.Z + cameraRight * inputVector.X)
+            if moveDirection.Magnitude > 0 then
+                moveDirection = moveDirection.Unit
+            end
         end
     end
     
-    -- Вертикальное движение
+    return moveDirection
+end
+
+Fly.GetVerticalDirection = function()
     local verticalDirection = 0
     local upKey, downKey = FlyStatus.VerticalKeys:match("(.+)/(.+)")
     if upKey and downKey then
@@ -399,16 +431,27 @@ Fly.GetFlyDirection = function()
             verticalDirection = -1
         end
     end
-    
-    -- Обнуляем Y компонент для горизонтального движения и добавляем вертикальный
-    moveDirection = Vector3.new(moveDirection.X, verticalDirection, moveDirection.Z)
-    
-    -- Нормализуем если есть движение
-    if moveDirection.Magnitude > 0 then
-        moveDirection = moveDirection.Unit
+    return verticalDirection
+end
+
+Fly.Cleanup = function()
+    if FlyStatus.BodyVelocity then
+        FlyStatus.BodyVelocity:Destroy()
+        FlyStatus.BodyVelocity = nil
+    end
+    if FlyStatus.BodyGyro then
+        FlyStatus.BodyGyro:Destroy()
+        FlyStatus.BodyGyro = nil
+    end
+    if FlyStatus.BodyPosition then
+        FlyStatus.BodyPosition:Destroy()
+        FlyStatus.BodyPosition = nil
     end
     
-    return moveDirection
+    local humanoid = getCharacterData()
+    if humanoid then
+        humanoid.PlatformStand = false
+    end
 end
 
 Fly.Start = function()
@@ -418,33 +461,47 @@ Fly.Start = function()
     
     FlyStatus.Running = true
     
-    -- Включаем NoClip если нужно
+    -- Очистка перед запуском
+    Fly.Cleanup()
+    
+    -- Настройка персонажа для полета
+    humanoid.PlatformStand = true
     if FlyStatus.NoClip then
         humanoid:ChangeState(Enum.HumanoidStateType.Physics)
-        if humanoid:FindFirstChild("BodyAngularVelocity") then
-            humanoid.BodyAngularVelocity:Destroy()
-        end
-        if humanoid:FindFirstChild("BodyVelocity") then
-            humanoid.BodyVelocity:Destroy()
-        end
     end
     
-    -- Создаем BodyVelocity для управления полетом
+    -- Создаем физические объекты
     FlyStatus.BodyVelocity = Instance.new("BodyVelocity")
     FlyStatus.BodyVelocity.MaxForce = Vector3.new(40000, 40000, 40000)
     FlyStatus.BodyVelocity.Velocity = Vector3.new(0, 0, 0)
+    FlyStatus.BodyVelocity.P = 1250
     FlyStatus.BodyVelocity.Parent = rootPart
     
-    -- Создаем BodyGyro для стабилизации
     FlyStatus.BodyGyro = Instance.new("BodyGyro")
-    FlyStatus.BodyGyro.MaxTorque = Vector3.new(40000, 40000, 40000)
+    FlyStatus.BodyGyro.MaxTorque = Vector3.new(50000, 50000, 50000)
     FlyStatus.BodyGyro.P = 1000
     FlyStatus.BodyGyro.D = 200
     FlyStatus.BodyGyro.CFrame = rootPart.CFrame
     FlyStatus.BodyGyro.Parent = rootPart
     
-    humanoid.PlatformStand = true
+    -- BodyPosition для плавного вертикального движения
+    FlyStatus.BodyPosition = Instance.new("BodyPosition")
+    FlyStatus.BodyPosition.MaxForce = Vector3.new(0, 40000, 0)
+    FlyStatus.BodyPosition.Position = rootPart.Position
+    FlyStatus.BodyPosition.P = 10000
+    FlyStatus.BodyPosition.D = 1000
+    FlyStatus.BodyPosition.Parent = rootPart
     
+    -- Обработчик изменения персонажа
+    FlyStatus.CharacterConnection = LocalPlayerObj.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        if FlyStatus.Enabled then
+            Fly.Stop()
+            Fly.Start()
+        end
+    end)
+    
+    -- Основной цикл полета
     FlyStatus.Connection = Services.RunService.Heartbeat:Connect(function(dt)
         if not FlyStatus.Enabled then
             FlyStatus.Running = false
@@ -452,35 +509,34 @@ Fly.Start = function()
         end
         
         local _, currentRootPart = getCharacterData()
-        if not currentRootPart then return end
+        if not currentRootPart or not FlyStatus.BodyGyro or not FlyStatus.BodyVelocity then return end
         
-        -- Получаем направление полета
+        -- Получаем направления
         local flyDirection = Fly.GetFlyDirection()
+        local verticalDirection = Fly.GetVerticalDirection()
         
-        if flyDirection.Magnitude > 0 then
-            -- Вычисляем скорость с учетом вертикальной скорости для Y компонента
-            local horizontalSpeed = FlyStatus.Speed
-            local verticalSpeed = FlyStatus.VerticalSpeed
-            
-            local velocity = Vector3.new(
-                flyDirection.X * horizontalSpeed,
-                flyDirection.Y * verticalSpeed,
-                flyDirection.Z * horizontalSpeed
-            )
-            
-            -- Применяем скорость
-            FlyStatus.BodyVelocity.Velocity = velocity
-            
-            -- Обновляем BodyGyro для стабилизации
-            if FlyStatus.BodyGyro then
-                local lookVector = Services.Workspace.CurrentCamera.CFrame.LookVector
-                local targetCFrame = CFrame.new(currentRootPart.Position, currentRootPart.Position + Vector3.new(lookVector.X, 0, lookVector.Z))
-                FlyStatus.BodyGyro.CFrame = targetCFrame
-            end
-        else
-            -- Останавливаем движение если нет ввода
-            FlyStatus.BodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        -- Обновляем BodyGyro для стабилизации
+        local camera = Services.Workspace.CurrentCamera
+        if camera then
+            local lookVector = camera.CFrame.LookVector
+            FlyStatus.BodyGyro.CFrame = CFrame.new(currentRootPart.Position, 
+                currentRootPart.Position + Vector3.new(lookVector.X, 0, lookVector.Z))
         end
+        
+        -- Вычисляем скорость
+        local velocity = flyDirection * FlyStatus.Speed
+        
+        -- Вертикальное движение через BodyPosition
+        if verticalDirection ~= 0 then
+            local newPosition = currentRootPart.Position + Vector3.new(0, verticalDirection * FlyStatus.VerticalSpeed * dt, 0)
+            FlyStatus.BodyPosition.Position = Vector3.new(currentRootPart.Position.X, newPosition.Y, currentRootPart.Position.Z)
+        else
+            -- Удерживаем текущую высоту
+            FlyStatus.BodyPosition.Position = Vector3.new(currentRootPart.Position.X, currentRootPart.Position.Y, currentRootPart.Position.Z)
+        end
+        
+        -- Применяем горизонтальную скорость
+        FlyStatus.BodyVelocity.Velocity = Vector3.new(velocity.X, 0, velocity.Z)
     end)
     
     notify("Fly", "Started with Speed: " .. FlyStatus.Speed, true)
@@ -491,26 +547,12 @@ Fly.Stop = function()
         FlyStatus.Connection:Disconnect()
         FlyStatus.Connection = nil
     end
-    
-    local humanoid, rootPart = getCharacterData()
-    
-    -- Удаляем физические объекты
-    if FlyStatus.BodyVelocity then
-        FlyStatus.BodyVelocity:Destroy()
-        FlyStatus.BodyVelocity = nil
+    if FlyStatus.CharacterConnection then
+        FlyStatus.CharacterConnection:Disconnect()
+        FlyStatus.CharacterConnection = nil
     end
     
-    if FlyStatus.BodyGyro then
-        FlyStatus.BodyGyro:Destroy()
-        FlyStatus.BodyGyro = nil
-    end
-    
-    -- Восстанавливаем состояние
-    if humanoid then
-        humanoid.PlatformStand = false
-        humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-    end
-    
+    Fly.Cleanup()
     FlyStatus.Running = false
     notify("Fly", "Stopped", true)
 end
@@ -578,7 +620,6 @@ InfStamina.UpdateStaminaValues = function()
     
     local elements = InfStamina.GetStaminaGuiElements()
     if elements then
-        -- Обновляем скорости если они есть
         if elements.Speeds then
             local walkSpeedVal = elements.Speeds:FindFirstChild("Walk")
             local runSpeedVal = elements.Speeds:FindFirstChild("Run")
@@ -591,7 +632,6 @@ InfStamina.UpdateStaminaValues = function()
             end
         end
         
-        -- Восстанавливаем GUI если включено
         if InfStaminaStatus.RestoreGui and elements.GreenBar and elements.StaminaLabel then
             elements.GreenBar.Size = UDim2.new(1, 0, 0, 32)
             elements.GreenBar.Image = "rbxassetid://119528804"
@@ -628,7 +668,6 @@ InfStamina.Start = function()
         
         InfStamina.UpdateStaminaValues()
         
-        -- Определяем, нужно ли спринтовать
         local shouldSprint = InfStaminaStatus.AlwaysSprint or 
                            (Services.UserInputService and 
                             Services.UserInputService:IsKeyDown(InfStaminaStatus.SprintKey))
@@ -636,7 +675,6 @@ InfStamina.Start = function()
         local targetSpeed = shouldSprint and InfStaminaStatus.RunSpeed or InfStaminaStatus.WalkSpeed
         humanoid.WalkSpeed = targetSpeed
         
-        -- Отправляем на сервер если есть remote
         local elements = InfStamina.GetStaminaGuiElements()
         if elements and elements.SpeedRemote and targetSpeed ~= InfStaminaStatus.LastSentSpeed then
             pcall(function()
@@ -689,9 +727,21 @@ InfStamina.Stop = function()
 end
 
 InfStamina.SetSprintKey = function(newKey)
-    InfStaminaStatus.SprintKey = newKey
-    MovementEnhancements.Config.InfStamina.SprintKey = newKey
-    notify("InfStamina", "Sprint key set to: " .. tostring(newKey), false)
+    local keyName = tostring(newKey)
+    if keyName == "LeftShift" then
+        InfStaminaStatus.SprintKey = Enum.KeyCode.LeftShift
+    elseif keyName == "Space" then
+        InfStaminaStatus.SprintKey = Enum.KeyCode.Space
+    elseif keyName == "C" then
+        InfStaminaStatus.SprintKey = Enum.KeyCode.C
+    elseif keyName == "V" then
+        InfStaminaStatus.SprintKey = Enum.KeyCode.V
+    else
+        InfStaminaStatus.SprintKey = Enum.KeyCode.LeftShift
+    end
+    
+    MovementEnhancements.Config.InfStamina.SprintKey = InfStaminaStatus.SprintKey
+    notify("InfStamina", "Sprint key set to: " .. tostring(InfStaminaStatus.SprintKey), false)
 end
 
 InfStamina.SetAlwaysSprint = function(enabled)
@@ -704,6 +754,189 @@ InfStamina.SetRestoreGui = function(enabled)
     InfStaminaStatus.RestoreGui = enabled
     MovementEnhancements.Config.InfStamina.RestoreGui = enabled
     notify("InfStamina", "Restore GUI " .. (enabled and "enabled" or "disabled"), false)
+end
+
+-- AntiAFK Module
+local AntiAFK = {}
+
+-- Hook для перехвата FireServer
+local function hookAFKRemote()
+    if not Services or AntiAFKStatus.AFKRemoteBlocked then return end
+    
+    local success, remote = pcall(function()
+        return game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("AFKRemote")
+    end)
+    
+    if success and remote then
+        AntiAFKStatus.OriginalFireServer = hookfunction(remote.FireServer, function(self, ...)
+            local args = {...}
+            if AntiAFKStatus.BlockAFKRemote and AntiAFKStatus.Enabled then
+                -- Блокируем AFK сигналы
+                if args[1] == true then -- AFK активация
+                    notify("AntiAFK", "Blocked AFK activation", false)
+                    return nil
+                end
+            end
+            -- Пропускаем остальные вызовы
+            return AntiAFKStatus.OriginalFireServer(self, ...)
+        end)
+        AntiAFKStatus.AFKRemoteBlocked = true
+        notify("AntiAFK", "AFK remote hooked successfully", false)
+    end
+end
+
+AntiAFK.CreateWarningFrame = function()
+    if not AntiAFKStatus.ShowWarning or not Services then return end
+    
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "AntiAFKWarning"
+    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 200, 0, 60)
+    frame.Position = UDim2.new(0.5, -100, 0.05, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    frame.BackgroundTransparency = 0.3
+    frame.BorderSizePixel = 0
+    frame.Visible = false
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = frame
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -20, 1, -20)
+    label.Position = UDim2.new(0, 10, 0, 10)
+    label.BackgroundTransparency = 1
+    label.Text = "Anti-AFK Active"
+    label.TextColor3 = Color3.fromRGB(0, 255, 0)
+    label.TextSize = 14
+    label.Font = Enum.Font.GothamBold
+    label.TextStrokeTransparency = 0.5
+    label.Parent = frame
+    
+    frame.Parent = screenGui
+    screenGui.Parent = Services.Players.LocalPlayer:WaitForChild("PlayerGui")
+    
+    AntiAFKStatus.AFKWarningFrame = frame
+end
+
+AntiAFK.Start = function()
+    if AntiAFKStatus.Running or not Services then return end
+    
+    AntiAFKStatus.Running = true
+    AntiAFKStatus.LastInputTime = os.time()
+    
+    -- Хук AFK remote
+    if AntiAFKStatus.BlockAFKRemote then
+        hookAFKRemote()
+    end
+    
+    -- Создаем предупреждение
+    if AntiAFKStatus.ShowWarning then
+        AntiAFK.CreateWarningFrame()
+        if AntiAFKStatus.AFKWarningFrame then
+            AntiAFKStatus.AFKWarningFrame.Visible = true
+        end
+    end
+    
+    -- Обработчик ввода
+    AntiAFKStatus.InputConnection = Services.UserInputService.InputBegan:Connect(function()
+        AntiAFKStatus.LastInputTime = os.time()
+    end)
+    
+    -- Основной цикл
+    AntiAFKStatus.HeartbeatConnection = Services.RunService.Heartbeat:Connect(function()
+        if not AntiAFKStatus.Enabled then
+            AntiAFKStatus.Running = false
+            return
+        end
+        
+        local currentTime = os.time()
+        local timeSinceLastInput = currentTime - AntiAFKStatus.LastInputTime
+        
+        -- Если прошло больше времени AFK, симулируем ввод
+        if timeSinceLastInput > AntiAFKStatus.CustomAFKTime then
+            AntiAFKStatus.LastInputTime = currentTime
+            
+            -- Симуляция разных действий для обхода AFK
+            if Services.UserInputService then
+                -- Симулируем движение мыши
+                Services.UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+                
+                -- Симулируем нажатие клавиши (не вызывая реального действия)
+                task.spawn(function()
+                    local virtualInput = game:GetService("VirtualInputManager")
+                    if virtualInput then
+                        virtualInput:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+                        task.wait(0.1)
+                        virtualInput:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+                    end
+                end)
+            end
+            
+            -- Отправляем ложный сигнал не-AFK если remote не заблокирован
+            if not AntiAFKStatus.BlockAFKRemote then
+                local success, remote = pcall(function()
+                    return game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("AFKRemote")
+                end)
+                if success then
+                    pcall(function()
+                        remote:FireServer(false)
+                    end)
+                end
+            end
+            
+            notify("AntiAFK", "Prevented AFK kick", false)
+        end
+    end)
+    
+    notify("AntiAFK", "Started (Timeout: " .. AntiAFKStatus.CustomAFKTime .. "s)", true)
+end
+
+AntiAFK.Stop = function()
+    if AntiAFKStatus.InputConnection then
+        AntiAFKStatus.InputConnection:Disconnect()
+        AntiAFKStatus.InputConnection = nil
+    end
+    
+    if AntiAFKStatus.HeartbeatConnection then
+        AntiAFKStatus.HeartbeatConnection:Disconnect()
+        AntiAFKStatus.HeartbeatConnection = nil
+    end
+    
+    -- Удаляем предупреждение
+    if AntiAFKStatus.AFKWarningFrame then
+        AntiAFKStatus.AFKWarningFrame:Destroy()
+        AntiAFKStatus.AFKWarningFrame = nil
+    end
+    
+    -- Восстанавливаем оригинальный FireServer если был хук
+    if AntiAFKStatus.OriginalFireServer and AntiAFKStatus.AFKRemoteBlocked then
+        hookfunction(getrawmetatable(game:GetService("ReplicatedStorage").Remotes.AFKRemote).__namecall, AntiAFKStatus.OriginalFireServer)
+        AntiAFKStatus.AFKRemoteBlocked = false
+    end
+    
+    AntiAFKStatus.Running = false
+    notify("AntiAFK", "Stopped", true)
+end
+
+AntiAFK.SetAFKTime = function(newTime)
+    AntiAFKStatus.CustomAFKTime = math.clamp(newTime, 30, 300)
+    MovementEnhancements.Config.AntiAFK.CustomAFKTime = AntiAFKStatus.CustomAFKTime
+    notify("AntiAFK", "AFK time set to: " .. AntiAFKStatus.CustomAFKTime .. "s", false)
+end
+
+AntiAFK.SetShowWarning = function(enabled)
+    AntiAFKStatus.ShowWarning = enabled
+    MovementEnhancements.Config.AntiAFK.ShowWarning = enabled
+    notify("AntiAFK", "Warning " .. (enabled and "enabled" or "disabled"), false)
+end
+
+AntiAFK.SetBlockAFKRemote = function(enabled)
+    AntiAFKStatus.BlockAFKRemote = enabled
+    MovementEnhancements.Config.AntiAFK.BlockAFKRemote = enabled
+    notify("AntiAFK", "Block AFK remote " .. (enabled and "enabled" or "disabled"), false)
 end
 
 -- UI Setup
@@ -920,7 +1153,7 @@ local function SetupUI(UI)
         
         uiElements.FlyVerticalKeys = UI.Sections.Fly:Dropdown({
             Name = "Vertical Keys",
-            Options = {"E/Q", "Space/LShift"},
+            Options = {"E/Q", "Space/LeftControl"},
             Default = MovementEnhancements.Config.Fly.VerticalKeys,
             Callback = function(value)
                 Fly.SetVerticalKeys(value)
@@ -984,10 +1217,9 @@ local function SetupUI(UI)
         uiElements.InfStaminaSprintKey = UI.Sections.InfStamina:Dropdown({
             Name = "Sprint Key",
             Options = {"LeftShift", "Space", "C", "V"},
-            Default = tostring(MovementEnhancements.Config.InfStamina.SprintKey),
+            Default = "LeftShift",
             Callback = function(value)
-                local key = Enum.KeyCode[value]
-                InfStamina.SetSprintKey(key)
+                InfStamina.SetSprintKey(value)
             end
         }, "InfStaminaSprintKey")
         
@@ -1007,6 +1239,63 @@ local function SetupUI(UI)
         }, "InfStaminaKey")
     end
 
+    -- AntiAFK Section
+    if UI.Sections.AntiAFK then
+        UI.Sections.AntiAFK:Header({ Name = "Anti-AFK" })
+        
+        uiElements.AntiAFKEnabled = UI.Sections.AntiAFK:Toggle({
+            Name = "Enabled",
+            Default = MovementEnhancements.Config.AntiAFK.Enabled,
+            Callback = function(value)
+                AntiAFKStatus.Enabled = value
+                MovementEnhancements.Config.AntiAFK.Enabled = value
+                if value then AntiAFK.Start() else AntiAFK.Stop() end
+            end
+        }, "AntiAFKEnabled")
+        
+        uiElements.AntiAFKTime = UI.Sections.AntiAFK:Slider({
+            Name = "AFK Time (seconds)",
+            Minimum = 30,
+            Maximum = 300,
+            Default = MovementEnhancements.Config.AntiAFK.CustomAFKTime,
+            Precision = 1,
+            Callback = function(value)
+                AntiAFK.SetAFKTime(value)
+            end
+        }, "AntiAFKTime")
+        
+        uiElements.AntiAFKShowWarning = UI.Sections.AntiAFK:Toggle({
+            Name = "Show Warning",
+            Default = MovementEnhancements.Config.AntiAFK.ShowWarning,
+            Callback = function(value)
+                AntiAFK.SetShowWarning(value)
+            end
+        }, "AntiAFKShowWarning")
+        
+        uiElements.AntiAFKBlockRemote = UI.Sections.AntiAFK:Toggle({
+            Name = "Block AFK Remote",
+            Default = MovementEnhancements.Config.AntiAFK.BlockAFKRemote,
+            Callback = function(value)
+                AntiAFK.SetBlockAFKRemote(value)
+            end
+        }, "AntiAFKBlockRemote")
+        
+        uiElements.AntiAFKKey = UI.Sections.AntiAFK:Keybind({
+            Name = "Toggle Key",
+            Default = MovementEnhancements.Config.AntiAFK.ToggleKey,
+            Callback = function(value)
+                AntiAFKStatus.Key = value
+                MovementEnhancements.Config.AntiAFK.ToggleKey = value
+                if isInputFocused() then return end
+                if AntiAFKStatus.Enabled then
+                    if AntiAFKStatus.Running then AntiAFK.Stop() else AntiAFK.Start() end
+                else
+                    notify("AntiAFK", "Enable AntiAFK to use keybind.", true)
+                end
+            end
+        }, "AntiAFKKey")
+    end
+
     -- Config Sync Section
     local localconfigSection = UI.Tabs.Config:Section({ Name = "Movement Enhancements Sync", Side = "Right" })
     localconfigSection:Header({ Name = "LocalPlayer Settings Sync" })
@@ -1014,57 +1303,82 @@ local function SetupUI(UI)
         Name = "Sync Config",
         Callback = function()
             -- Timer
-            MovementEnhancements.Config.Timer.Enabled = uiElements.TimerEnabled:GetState()
-            MovementEnhancements.Config.Timer.Speed = uiElements.TimerSpeed:GetValue()
-            MovementEnhancements.Config.Timer.ToggleKey = uiElements.TimerKey:GetBind()
+            if uiElements.TimerEnabled then
+                MovementEnhancements.Config.Timer.Enabled = uiElements.TimerEnabled:GetState()
+                MovementEnhancements.Config.Timer.Speed = uiElements.TimerSpeed:GetValue()
+                MovementEnhancements.Config.Timer.ToggleKey = uiElements.TimerKey:GetBind()
+            end
 
             -- Disabler
-            MovementEnhancements.Config.Disabler.Enabled = uiElements.DisablerEnabled:GetState()
-            MovementEnhancements.Config.Disabler.ToggleKey = uiElements.DisablerKey:GetBind()
+            if uiElements.DisablerEnabled then
+                MovementEnhancements.Config.Disabler.Enabled = uiElements.DisablerEnabled:GetState()
+                MovementEnhancements.Config.Disabler.ToggleKey = uiElements.DisablerKey:GetBind()
+            end
 
             -- Speed
-            MovementEnhancements.Config.Speed.Enabled = uiElements.SpeedEnabled:GetState()
-            MovementEnhancements.Config.Speed.AutoJump = uiElements.SpeedAutoJump:GetState()
-            local speedMethodOptions = uiElements.SpeedMethod:GetOptions()
-            for option, selected in pairs(speedMethodOptions) do
-                if selected then
-                    MovementEnhancements.Config.Speed.Method = option
-                    break
+            if uiElements.SpeedEnabled then
+                MovementEnhancements.Config.Speed.Enabled = uiElements.SpeedEnabled:GetState()
+                MovementEnhancements.Config.Speed.AutoJump = uiElements.SpeedAutoJump:GetState()
+                if uiElements.SpeedMethod then
+                    local speedMethodOptions = uiElements.SpeedMethod:GetOptions()
+                    for option, selected in pairs(speedMethodOptions) do
+                        if selected then
+                            MovementEnhancements.Config.Speed.Method = option
+                            break
+                        end
+                    end
                 end
+                MovementEnhancements.Config.Speed.Speed = uiElements.Speed:GetValue()
+                MovementEnhancements.Config.Speed.JumpInterval = uiElements.SpeedJumpInterval:GetValue()
+                MovementEnhancements.Config.Speed.PulseTPDist = uiElements.SpeedPulseTPDistance:GetValue()
+                MovementEnhancements.Config.Speed.PulseTPDelay = uiElements.SpeedPulseTPFrequency:GetValue()
+                MovementEnhancements.Config.Speed.SmoothnessFactor = uiElements.SpeedSmoothnessFactor:GetValue()
+                MovementEnhancements.Config.Speed.ToggleKey = uiElements.SpeedKey:GetBind()
             end
-            MovementEnhancements.Config.Speed.Speed = uiElements.Speed:GetValue()
-            MovementEnhancements.Config.Speed.JumpInterval = uiElements.SpeedJumpInterval:GetValue()
-            MovementEnhancements.Config.Speed.PulseTPDist = uiElements.SpeedPulseTPDistance:GetValue()
-            MovementEnhancements.Config.Speed.PulseTPDelay = uiElements.SpeedPulseTPFrequency:GetValue()
-            MovementEnhancements.Config.Speed.SmoothnessFactor = uiElements.SpeedSmoothnessFactor:GetValue()
-            MovementEnhancements.Config.Speed.ToggleKey = uiElements.SpeedKey:GetBind()
 
             -- Fly
-            MovementEnhancements.Config.Fly.Enabled = uiElements.FlyEnabled:GetState()
-            MovementEnhancements.Config.Fly.Speed = uiElements.FlySpeed:GetValue()
-            MovementEnhancements.Config.Fly.VerticalSpeed = uiElements.FlyVerticalSpeed:GetValue()
-            local flyVerticalKeysOptions = uiElements.FlyVerticalKeys:GetOptions()
-            for option, selected in pairs(flyVerticalKeysOptions) do
-                if selected then
-                    MovementEnhancements.Config.Fly.VerticalKeys = option
-                    break
+            if uiElements.FlyEnabled then
+                MovementEnhancements.Config.Fly.Enabled = uiElements.FlyEnabled:GetState()
+                MovementEnhancements.Config.Fly.Speed = uiElements.FlySpeed:GetValue()
+                MovementEnhancements.Config.Fly.VerticalSpeed = uiElements.FlyVerticalSpeed:GetValue()
+                if uiElements.FlyVerticalKeys then
+                    local flyVerticalKeysOptions = uiElements.FlyVerticalKeys:GetOptions()
+                    for option, selected in pairs(flyVerticalKeysOptions) do
+                        if selected then
+                            MovementEnhancements.Config.Fly.VerticalKeys = option
+                            break
+                        end
+                    end
                 end
+                MovementEnhancements.Config.Fly.NoClip = uiElements.FlyNoClip:GetState()
+                MovementEnhancements.Config.Fly.ToggleKey = uiElements.FlyKey:GetBind()
             end
-            MovementEnhancements.Config.Fly.NoClip = uiElements.FlyNoClip:GetState()
-            MovementEnhancements.Config.Fly.ToggleKey = uiElements.FlyKey:GetBind()
 
             -- InfStamina
-            MovementEnhancements.Config.InfStamina.Enabled = uiElements.InfStaminaEnabled:GetState()
-            MovementEnhancements.Config.InfStamina.AlwaysSprint = uiElements.InfStaminaAlwaysSprint:GetState()
-            MovementEnhancements.Config.InfStamina.RestoreGui = uiElements.InfStaminaRestoreGui:GetState()
-            local sprintKeyOptions = uiElements.InfStaminaSprintKey:GetOptions()
-            for option, selected in pairs(sprintKeyOptions) do
-                if selected then
-                    MovementEnhancements.Config.InfStamina.SprintKey = Enum.KeyCode[option]
-                    break
+            if uiElements.InfStaminaEnabled then
+                MovementEnhancements.Config.InfStamina.Enabled = uiElements.InfStaminaEnabled:GetState()
+                MovementEnhancements.Config.InfStamina.AlwaysSprint = uiElements.InfStaminaAlwaysSprint:GetState()
+                MovementEnhancements.Config.InfStamina.RestoreGui = uiElements.InfStaminaRestoreGui:GetState()
+                if uiElements.InfStaminaSprintKey then
+                    local sprintKeyOptions = uiElements.InfStaminaSprintKey:GetOptions()
+                    for option, selected in pairs(sprintKeyOptions) do
+                        if selected then
+                            MovementEnhancements.Config.InfStamina.SprintKey = Enum.KeyCode[option]
+                            break
+                        end
+                    end
                 end
+                MovementEnhancements.Config.InfStamina.ToggleKey = uiElements.InfStaminaKey:GetBind()
             end
-            MovementEnhancements.Config.InfStamina.ToggleKey = uiElements.InfStaminaKey:GetBind()
+
+            -- AntiAFK
+            if uiElements.AntiAFKEnabled then
+                MovementEnhancements.Config.AntiAFK.Enabled = uiElements.AntiAFKEnabled:GetState()
+                MovementEnhancements.Config.AntiAFK.CustomAFKTime = uiElements.AntiAFKTime:GetValue()
+                MovementEnhancements.Config.AntiAFK.ShowWarning = uiElements.AntiAFKShowWarning:GetState()
+                MovementEnhancements.Config.AntiAFK.BlockAFKRemote = uiElements.AntiAFKBlockRemote:GetState()
+                MovementEnhancements.Config.AntiAFK.ToggleKey = uiElements.AntiAFKKey:GetBind()
+            end
 
             -- Apply changes
             TimerStatus.Enabled = MovementEnhancements.Config.Timer.Enabled
@@ -1106,7 +1420,10 @@ local function SetupUI(UI)
             FlyStatus.NoClip = MovementEnhancements.Config.Fly.NoClip
             FlyStatus.Key = MovementEnhancements.Config.Fly.ToggleKey
             if FlyStatus.Enabled then
-                if not FlyStatus.Running then Fly.Start() end
+                if not FlyStatus.Running then 
+                    Fly.Stop()
+                    Fly.Start()
+                end
             else
                 if FlyStatus.Running then Fly.Stop() end
             end
@@ -1120,6 +1437,17 @@ local function SetupUI(UI)
                 if not InfStaminaStatus.Running then InfStamina.Start() end
             else
                 if InfStaminaStatus.Running then InfStamina.Stop() end
+            end
+
+            AntiAFKStatus.Enabled = MovementEnhancements.Config.AntiAFK.Enabled
+            AntiAFKStatus.CustomAFKTime = MovementEnhancements.Config.AntiAFK.CustomAFKTime
+            AntiAFKStatus.ShowWarning = MovementEnhancements.Config.AntiAFK.ShowWarning
+            AntiAFKStatus.BlockAFKRemote = MovementEnhancements.Config.AntiAFK.BlockAFKRemote
+            AntiAFKStatus.Key = MovementEnhancements.Config.AntiAFK.ToggleKey
+            if AntiAFKStatus.Enabled then
+                if not AntiAFKStatus.Running then AntiAFK.Start() end
+            else
+                if AntiAFKStatus.Running then AntiAFK.Stop() end
             end
 
             notify("Syllinse", "Config synchronized!", true)
@@ -1142,44 +1470,35 @@ function MovementEnhancements.Init(UI, coreParam, notifyFunc)
     _G.setFlyVerticalSpeed = Fly.SetVerticalSpeed
     _G.setFlyVerticalKeys = Fly.SetVerticalKeys
     _G.setInfStaminaSprintKey = InfStamina.SetSprintKey
+    _G.setAntiAFKTime = AntiAFK.SetAFKTime
 
     -- Character added connections
     if LocalPlayerObj then
-        LocalPlayerObj.CharacterAdded:Connect(function(newChar)
-            task.wait(0.5) -- Wait for character to fully load
+        local function handleCharacterChange()
+            task.wait(0.5)
             
             if DisablerStatus.Enabled then
-                Disabler.DisableSignals(newChar)
+                Disabler.DisableSignals(LocalPlayerObj.Character)
             end
             if SpeedStatus.Enabled then
                 Speed.Start()
             end
             if FlyStatus.Enabled then
+                Fly.Stop()
+                task.wait(0.2)
                 Fly.Start()
             end
             if InfStaminaStatus.Enabled then
-                task.wait(1) -- Wait for stamina GUI to load
+                task.wait(1)
                 InfStamina.Start()
             end
-        end)
+        end
+        
+        LocalPlayerObj.CharacterAdded:Connect(handleCharacterChange)
         
         -- Handle initial character
         if LocalPlayerObj.Character then
-            task.spawn(function()
-                task.wait(1)
-                if DisablerStatus.Enabled then
-                    Disabler.DisableSignals(LocalPlayerObj.Character)
-                end
-                if SpeedStatus.Enabled then
-                    Speed.Start()
-                end
-                if FlyStatus.Enabled then
-                    Fly.Start()
-                end
-                if InfStaminaStatus.Enabled then
-                    InfStamina.Start()
-                end
-            end)
+            task.spawn(handleCharacterChange)
         end
     end
 
@@ -1189,53 +1508,22 @@ end
 -- Cleanup function
 function MovementEnhancements:Destroy()
     -- Timer
-    if TimerStatus.Connection then
-        TimerStatus.Connection:Disconnect()
-        TimerStatus.Connection = nil
-    end
+    Timer.Stop()
     
     -- Disabler
-    if DisablerStatus.Connection then
-        DisablerStatus.Connection:Disconnect()
-        DisablerStatus.Connection = nil
-    end
+    Disabler.Stop()
     
     -- Speed
-    if SpeedStatus.Connection then
-        SpeedStatus.Connection:Disconnect()
-        SpeedStatus.Connection = nil
-    end
+    Speed.Stop()
     
     -- Fly
-    if FlyStatus.Connection then
-        FlyStatus.Connection:Disconnect()
-        FlyStatus.Connection = nil
-    end
-    if FlyStatus.BodyVelocity then
-        FlyStatus.BodyVelocity:Destroy()
-        FlyStatus.BodyVelocity = nil
-    end
-    if FlyStatus.BodyGyro then
-        FlyStatus.BodyGyro:Destroy()
-        FlyStatus.BodyGyro = nil
-    end
+    Fly.Stop()
     
     -- InfStamina
-    if InfStaminaStatus.GuiMainProtectionConnection then
-        InfStaminaStatus.GuiMainProtectionConnection:Disconnect()
-        InfStaminaStatus.GuiMainProtectionConnection = nil
-    end
-    if InfStaminaStatus.SpeedUpdateConnection then
-        InfStaminaStatus.SpeedUpdateConnection:Disconnect()
-        InfStaminaStatus.SpeedUpdateConnection = nil
-    end
+    InfStamina.Stop()
     
-    -- Reset statuses
-    TimerStatus.Running = false
-    DisablerStatus.Running = false
-    SpeedStatus.Running = false
-    FlyStatus.Running = false
-    InfStaminaStatus.Running = false
+    -- AntiAFK
+    AntiAFK.Stop()
     
     notify("MovementEnhancements", "All modules stopped", true)
 end
