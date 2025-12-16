@@ -638,18 +638,6 @@ function ChinaHat.Init(UI, Core, notify)
                 notify("Nimb", "Nimb Color updated", false)
             end,
         }, 'NimbColor')
-        nimbSection:Divider()
-        uiElements.NimbYOffset = nimbSection:Slider({
-            Name = "Y Offset",
-            Minimum = 1,
-            Maximum = 3,
-            Default = State.Nimb.NimbYOffset.Default,
-            Precision = 2,
-            Callback = function(value)
-                State.Nimb.NimbYOffset.Value = value
-                notify("Nimb", "Nimb Y Offset set to: " .. value, false)
-            end,
-        }, 'NimbYOffset')
 
         local configSection = UI.Tabs.Config:Section({ Name = "Circle,ChinaHat,Nimb Sync", Side = "Right" })
         configSection:Header({ Name = "ChinaHat, Circle, Nimb Settings Sync" })
