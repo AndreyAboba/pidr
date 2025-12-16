@@ -459,8 +459,6 @@ function BallTrajectoryModule.SetupUI(UI)
                 if uiElements.Enabled then CONFIG.Enabled = uiElements.Enabled:GetState() end
                 if uiElements.Raycast then CONFIG.UseRaycast = uiElements.Raycast:GetState() end
                 if uiElements.PredSteps then CONFIG.PRED_STEPS = uiElements.PredSteps:GetValue() end
-                if uiElements.TrajColor then CONFIG.TrajectoryColor = uiElements.TrajColor:GetValue() end
-                if uiElements.EndpointColor then CONFIG.EndpointColor = uiElements.EndpointColor:GetValue() end
                 if CONFIG.Enabled then
                     if not Status.Running then
                         BallTrajectoryModule.Start()
