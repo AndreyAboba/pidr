@@ -1412,15 +1412,6 @@ local function syncConfig()
     CONFIG.SHOW_ATTACK_TARGET = moduleState.uiElements.ShowAttackTarget and moduleState.uiElements.ShowAttackTarget:GetState()
     
     -- Update colors
-    CONFIG.TRAJECTORY_COLOR = moduleState.colorPickers.TrajectoryColor and moduleState.colorPickers.TrajectoryColor:GetValue() or CONFIG.TRAJECTORY_COLOR
-    CONFIG.ENDPOINT_COLOR = moduleState.colorPickers.EndpointColor and moduleState.colorPickers.EndpointColor:GetValue() or CONFIG.ENDPOINT_COLOR
-    CONFIG.GOAL_CUBE_COLOR = moduleState.colorPickers.GoalCubeColor and moduleState.colorPickers.GoalCubeColor:GetValue() or CONFIG.GOAL_CUBE_COLOR
-    CONFIG.ZONE_COLOR = moduleState.colorPickers.ZoneColor and moduleState.colorPickers.ZoneColor:GetValue() or CONFIG.ZONE_COLOR
-    CONFIG.BALL_BOX_SAFE_COLOR = moduleState.colorPickers.BallBoxSafeColor and moduleState.colorPickers.BallBoxSafeColor:GetValue() or CONFIG.BALL_BOX_SAFE_COLOR
-    CONFIG.BALL_BOX_THREAT_COLOR = moduleState.colorPickers.BallBoxThreatColor and moduleState.colorPickers.BallBoxThreatColor:GetValue() or CONFIG.BALL_BOX_THREAT_COLOR
-    CONFIG.BALL_BOX_HIGH_COLOR = moduleState.colorPickers.BallBoxHighColor and moduleState.colorPickers.BallBoxHighColor:GetValue() or CONFIG.BALL_BOX_HIGH_COLOR
-    CONFIG.BALL_BOX_NORMAL_COLOR = moduleState.colorPickers.BallBoxNormalColor and moduleState.colorPickers.BallBoxNormalColor:GetValue() or CONFIG.BALL_BOX_NORMAL_COLOR
-    CONFIG.ATTACK_TARGET_COLOR = moduleState.colorPickers.AttackTargetColor and moduleState.colorPickers.AttackTargetColor:GetValue() or CONFIG.ATTACK_TARGET_COLOR
     
     -- Update visual colors
     updateVisualColors()
@@ -2067,3 +2058,4 @@ function GKHelperModule:Destroy()
 end
 
 return GKHelperModule
+
