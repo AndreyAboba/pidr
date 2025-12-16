@@ -91,9 +91,7 @@ local FlyStatus = {
     Speed = MovementEnhancements.Config.Fly.Speed,
     VerticalSpeed = MovementEnhancements.Config.Fly.VerticalSpeed,
     VerticalKeys = MovementEnhancements.Config.Fly.VerticalKeys,
-    IsFlying = false,
-    VerticalDirection = 0,
-    FlightCFrame = nil
+    IsFlying = false
 }
 
 local InfStaminaStatus = {
@@ -149,6 +147,52 @@ end
 
 local function isInputFocused()
     return Services and Services.UserInputService and Services.UserInputService:GetFocusedTextBox() ~= nil
+end
+
+local function getFlyDirection()
+    if not Services.UserInputService or not Services.Workspace.CurrentCamera then
+        return Vector3.new(0, 0, 0), 0
+    end
+    
+    local camera = Services.Workspace.CurrentCamera
+    local cameraCFrame = camera.CFrame
+    
+    -- Получаем плоские вектора направления камеры
+    local flatForward = Vector3.new(cameraCFrame.LookVector.X, 0, cameraCFrame.LookVector.Z)
+    local flatRight = Vector3.new(cameraCFrame.RightVector.X, 0, cameraCFrame.RightVector.Z)
+    
+    if flatForward.Magnitude > 0 then flatForward = flatForward.Unit end
+    if flatRight.Magnitude > 0 then flatRight = flatRight.Unit end
+    
+    -- Ввод WASD
+    local w = Services.UserInputService:IsKeyDown(Enum.KeyCode.W) and 1 or 0
+    local s = Services.UserInputService:IsKeyDown(Enum.KeyCode.S) and -1 or 0
+    local a = Services.UserInputService:IsKeyDown(Enum.KeyCode.A) and -1 or 0
+    local d = Services.UserInputService:IsKeyDown(Enum.KeyCode.D) and 1 or 0
+    
+    local horizontalInput = Vector3.new(a + d, 0, w + s)
+    local moveDirection = Vector3.new(0, 0, 0)
+    
+    if horizontalInput.Magnitude > 0 then
+        horizontalInput = horizontalInput.Unit
+        moveDirection = (flatForward * horizontalInput.Z + flatRight * horizontalInput.X)
+        if moveDirection.Magnitude > 0 then
+            moveDirection = moveDirection.Unit
+        end
+    end
+    
+    -- Вертикальное движение
+    local verticalDirection = 0
+    local upKey, downKey = FlyStatus.VerticalKeys:match("(.+)/(.+)")
+    if upKey and downKey then
+        if Services.UserInputService:IsKeyDown(Enum.KeyCode[upKey]) then
+            verticalDirection = 1
+        elseif Services.UserInputService:IsKeyDown(Enum.KeyCode[downKey]) then
+            verticalDirection = -1
+        end
+    end
+    
+    return moveDirection, verticalDirection
 end
 
 local function getCustomMoveDirection()
@@ -249,7 +293,7 @@ Disabler.DisableSignals = function(character)
         pcall(function() hookfunction(connection.Function, function() end) end)
     end
     for _, connection in ipairs(getconnections(rootPart:GetPropertyChangedSignal("Velocity"))) do
-        pcall(function() hookfunction(connection.Function, function() end) end)
+        pcall(function() hookfunction(connection.Function, function() end) end
     end
 end
 
@@ -373,52 +417,8 @@ Speed.SetSmoothnessFactor = function(value)
     notify("Speed", "Smoothness Factor set to: " .. SpeedStatus.SmoothnessFactor, false)
 end
 
--- Fly Module (ИСПРАВЛЕННЫЙ - не падает на месте)
+-- Fly Module (ИСПРАВЛЕННЫЙ - нормальный CFrame метод)
 local Fly = {}
-Fly.GetFlyDirection = function()
-    local moveDirection = Vector3.new(0, 0, 0)
-    
-    if Services.UserInputService and Services.Workspace.CurrentCamera then
-        local camera = Services.Workspace.CurrentCamera
-        local cameraCFrame = camera.CFrame
-        
-        local cameraForward = Vector3.new(cameraCFrame.LookVector.X, 0, cameraCFrame.LookVector.Z)
-        local cameraRight = Vector3.new(cameraCFrame.RightVector.X, 0, cameraCFrame.RightVector.Z)
-        
-        if cameraForward.Magnitude > 0 then cameraForward = cameraForward.Unit end
-        if cameraRight.Magnitude > 0 then cameraRight = cameraRight.Unit end
-        
-        local w = Services.UserInputService:IsKeyDown(Enum.KeyCode.W) and 1 or 0
-        local s = Services.UserInputService:IsKeyDown(Enum.KeyCode.S) and -1 or 0
-        local a = Services.UserInputService:IsKeyDown(Enum.KeyCode.A) and -1 or 0
-        local d = Services.UserInputService:IsKeyDown(Enum.KeyCode.D) and 1 or 0
-        
-        local inputVector = Vector3.new(a + d, 0, w + s)
-        if inputVector.Magnitude > 0 then
-            inputVector = inputVector.Unit
-            moveDirection = (cameraForward * inputVector.Z + cameraRight * inputVector.X)
-            if moveDirection.Magnitude > 0 then
-                moveDirection = moveDirection.Unit
-            end
-        end
-    end
-    
-    return moveDirection
-end
-
-Fly.GetVerticalDirection = function()
-    local verticalDirection = 0
-    local upKey, downKey = FlyStatus.VerticalKeys:match("(.+)/(.+)")
-    if upKey and downKey then
-        if Services.UserInputService:IsKeyDown(Enum.KeyCode[upKey]) then
-            verticalDirection = 1
-        elseif Services.UserInputService:IsKeyDown(Enum.KeyCode[downKey]) then
-            verticalDirection = -1
-        end
-    end
-    return verticalDirection
-end
-
 Fly.Start = function()
     if FlyStatus.Running or not Services then return end
     local humanoid, rootPart = getCharacterData()
@@ -427,28 +427,57 @@ Fly.Start = function()
     FlyStatus.Running = true
     FlyStatus.IsFlying = true
     
-    -- Сохраняем начальный CFrame для стабилизации
-    FlyStatus.FlightCFrame = rootPart.CFrame
+    -- Делаем человечка неподвижным
+    humanoid.PlatformStand = true
     
     notify("Fly", "Started with Speed: " .. FlyStatus.Speed, true)
     
-    -- Main fly loop using CFrame
+    -- Основной цикл полета
     FlyStatus.Connection = Services.RunService.Heartbeat:Connect(function(dt)
         if not FlyStatus.Enabled then
             FlyStatus.Running = false
             return
         end
         
-        local _, currentRootPart = getCharacterData()
-        if not currentRootPart then return end
+        local currentHumanoid, currentRootPart = getCharacterData()
+        if not currentHumanoid or not currentRootPart then return end
         
-        -- Get movement direction
-        local flyDirection = Fly.GetFlyDirection()
-        local verticalDirection = Fly.GetVerticalDirection()
+        -- Получаем направление движения
+        local moveDirection, verticalDirection = getFlyDirection()
         
-        -- If no movement input, maintain current position
-        if flyDirection.Magnitude == 0 and verticalDirection == 0 then
-            -- Просто обновляем вращение для стабилизации
+        -- Если нет ввода - поддерживаем текущую позицию
+        local movement = Vector3.new(0, 0, 0)
+        
+        -- Горизонтальное движение
+        if moveDirection.Magnitude > 0 then
+            movement = movement + (moveDirection * FlyStatus.Speed * dt)
+        end
+        
+        -- Вертикальное движение
+        if verticalDirection ~= 0 then
+            movement = movement + (Vector3.new(0, verticalDirection * FlyStatus.VerticalSpeed * dt, 0))
+        end
+        
+        -- Применяем движение через CFrame
+        if movement.Magnitude > 0 then
+            local newPosition = currentRootPart.Position + movement
+            
+            -- Сохраняем вращение камеры для направления взгляда
+            local camera = Services.Workspace.CurrentCamera
+            if camera then
+                local lookVector = camera.CFrame.LookVector
+                local horizontalLook = Vector3.new(lookVector.X, 0, lookVector.Z)
+                if horizontalLook.Magnitude > 0 then
+                    horizontalLook = horizontalLook.Unit
+                    currentRootPart.CFrame = CFrame.new(newPosition, newPosition + horizontalLook)
+                else
+                    currentRootPart.CFrame = CFrame.new(newPosition)
+                end
+            else
+                currentRootPart.CFrame = CFrame.new(newPosition)
+            end
+        else
+            -- Если нет движения, просто обновляем вращение для стабилизации
             local camera = Services.Workspace.CurrentCamera
             if camera then
                 local lookVector = camera.CFrame.LookVector
@@ -458,45 +487,11 @@ Fly.Start = function()
                     currentRootPart.CFrame = CFrame.new(currentRootPart.Position, currentRootPart.Position + horizontalLook)
                 end
             end
-            return
         end
         
-        -- Calculate movement vector
-        local movement = Vector3.new(0, 0, 0)
-        
-        if flyDirection.Magnitude > 0 then
-            movement = movement + (flyDirection * FlyStatus.Speed * dt)
-        end
-        
-        if verticalDirection ~= 0 then
-            movement = movement + (Vector3.new(0, verticalDirection * FlyStatus.VerticalSpeed * dt, 0))
-        end
-        
-        -- Apply movement using CFrame
-        if movement.Magnitude > 0 then
-            local newPosition = currentRootPart.Position + movement
-            
-            -- Keep character looking forward
-            local camera = Services.Workspace.CurrentCamera
-            if camera then
-                local lookVector = camera.CFrame.LookVector
-                local horizontalLook = Vector3.new(lookVector.X, 0, lookVector.Z)
-                if horizontalLook.Magnitude > 0 then
-                    currentRootPart.CFrame = CFrame.new(newPosition, newPosition + horizontalLook)
-                else
-                    currentRootPart.CFrame = CFrame.new(newPosition)
-                end
-            else
-                currentRootPart.CFrame = CFrame.new(newPosition)
-            end
-            
-            -- Обнуляем скорость чтобы не падать
-            currentRootPart.Velocity = Vector3.new(0, 0, 0)
-            currentRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-            
-            -- Обновляем сохраненный CFrame
-            FlyStatus.FlightCFrame = currentRootPart.CFrame
-        end
+        -- Обнуляем физическую скорость чтобы не падать
+        currentRootPart.Velocity = Vector3.new(0, 0, 0)
+        currentRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
     end)
 end
 
@@ -506,16 +501,15 @@ Fly.Stop = function()
         FlyStatus.Connection = nil
     end
     
-    FlyStatus.Running = false
-    FlyStatus.IsFlying = false
-    FlyStatus.FlightCFrame = nil
-    
-    -- Восстанавливаем физику
+    -- Восстанавливаем нормальное состояние
     local humanoid, rootPart = getCharacterData()
     if humanoid then
-        humanoid:ChangeState(Enum.HumanoidStateType.Landed)
+        humanoid.PlatformStand = false
+        humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
     end
     
+    FlyStatus.Running = false
+    FlyStatus.IsFlying = false
     notify("Fly", "Stopped", true)
 end
 
@@ -700,7 +694,7 @@ InfStamina.SetRestoreGui = function(enabled)
     notify("InfStamina", "Restore GUI " .. (enabled and "enabled" or "disabled"), false)
 end
 
--- AntiAFK Module с правильным hookmetamethod
+-- AntiAFK Module
 local AntiAFK = {}
 
 AntiAFK.Start = function()
@@ -711,7 +705,7 @@ AntiAFK.Start = function()
     
     -- Находим AFKRemote
     local afkRemote
-    local success, err = pcall(function()
+    local success = pcall(function()
         afkRemote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("AFKRemote")
     end)
     
@@ -720,23 +714,20 @@ AntiAFK.Start = function()
         return
     end
     
-    -- Используем правильный hookmetamethod
+    -- Хук для блокировки AFK
     local originalNamecall
     originalNamecall = hookmetamethod(game, "__namecall", function(self, ...)
         local args = {...}
-        local method = getnamecallmethod()
         
-        -- Проверяем, если это AFKRemote и вызывается FireServer
-        if self == afkRemote and method == "FireServer" then
+        if self == afkRemote and getnamecallmethod() == "FireServer" then
             if AntiAFKStatus.Enabled then
-                if args[1] == true then -- AFK активация
+                if args[1] == true then -- Блокируем активацию AFK
                     notify("AntiAFK", "Blocked AFK activation", false)
                     return nil
                 end
             end
         end
         
-        -- Возвращаем оригинальный вызов
         return originalNamecall(self, ...)
     end)
     
@@ -761,19 +752,11 @@ AntiAFK.Start = function()
             AntiAFKStatus.LastInputTime = currentTime
             
             -- Симуляция ввода
-            if Services.UserInputService then
-                -- Симулируем движение мыши
-                Services.UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-                
-                -- Симулируем нажатие клавиши
-                task.spawn(function()
-                    local virtualInput = game:GetService("VirtualInputManager")
-                    if virtualInput then
-                        virtualInput:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-                        task.wait(0.05)
-                        virtualInput:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-                    end
-                end)
+            local virtualInput = game:GetService("VirtualInputManager")
+            if virtualInput then
+                virtualInput:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+                task.wait(0.05)
+                virtualInput:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
             end
             
             notify("AntiAFK", "Prevented AFK kick", false)
@@ -794,7 +777,7 @@ AntiAFK.Stop = function()
         AntiAFKStatus.HeartbeatConnection = nil
     end
     
-    -- Восстанавливаем оригинальный __namecall
+    -- Восстанавливаем оригинальный хук
     if AntiAFKStatus.OriginalFireServer then
         hookmetamethod(game, "__namecall", AntiAFKStatus.OriginalFireServer)
         AntiAFKStatus.OriginalFireServer = nil
