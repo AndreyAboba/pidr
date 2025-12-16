@@ -296,7 +296,7 @@ function ChinaHat.Init(UI, Core, notify)
             -- Для большинства персонажей это примерно Humanoid.HipHeight * 0.8
             if localCharacter:FindFirstChild("Humanoid") then
                 local humanoid = localCharacter.Humanoid
-                circleHeight = rootPart.Position.Y - (humanoid.HipHeight * 1.2)
+                circleHeight = rootPart.Position.Y - (humanoid.HipHeight * 1.4)
             else
                 circleHeight = rootPart.Position.Y - 2 -- Значение по умолчанию
             end
@@ -636,7 +636,7 @@ function ChinaHat.Init(UI, Core, notify)
         local circleSection = UI.Sections.Circle or UI.Tabs.Visuals:Section({ Name = "Circle", Side = "Left" })
         UI.Sections.Circle = circleSection
         circleSection:Header({ Name = "Circle" })
-        circleSection:SubLabel({ Text = "Displays a circle at the player feet (Auto-adjusts for ShiftLock)" })
+        circleSection:SubLabel({ Text = "Displays a circle at the player feet" })
         uiElements.CircleEnabled = circleSection:Toggle({
             Name = "Enabled",
             Default = State.Circle.CircleActive.Default,
@@ -720,7 +720,7 @@ function ChinaHat.Init(UI, Core, notify)
         local nimbSection = UI.Sections.Nimb or UI.Tabs.Visuals:Section({ Name = "Nimb", Side = "Right" })
         UI.Sections.Nimb = nimbSection
         nimbSection:Header({ Name = "Nimb" })
-        nimbSection:SubLabel({ Text = "Displays a circle above the player head (Auto-adjusts for ShiftLock)" })
+        nimbSection:SubLabel({ Text = "Displays a circle above the player head" })
         uiElements.NimbEnabled = nimbSection:Toggle({
             Name = "Nimb Enabled",
             Default = State.Nimb.NimbActive.Default,
@@ -857,5 +857,6 @@ function ChinaHat.Init(UI, Core, notify)
 end
 
 return ChinaHat
+
 
 
