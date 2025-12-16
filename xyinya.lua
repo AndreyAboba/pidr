@@ -850,7 +850,7 @@ function Visuals.Init(UI, Core, notify)
         local humanoid = character:FindFirstChild("Humanoid")
         if humanoid then
             if ESP.Settings.ESPMode.Value == "2D" then
-                local height = humanoid.HipHeight * 3.2 + 4.0
+                local height = humanoid.HipHeight * 3.2 + 4.5
                 local width = height * 0.4
                 return Vector3.new(width, height, 1)
             else
@@ -935,7 +935,7 @@ function Visuals.Init(UI, Core, notify)
         end
         
         -- Информация (страна/устройство) идет между именем и барами/текстом
-        positions.Info = positions.Name + 5 * textScale
+        positions.Info = positions.Name + 0 * textScale
         
         -- Проверка границ экрана
         for name, y in pairs(positions) do
