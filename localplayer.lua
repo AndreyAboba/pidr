@@ -1096,7 +1096,7 @@ local function SetupUI(UI)
             end
         })
 
-        UI.Sections.InfStamina:SubLabel{(Text = '[❗] Ban risk, should be undetected \n but anticheat can detect it easily'
+        UI.Sections.InfStamina:SubLabel({ Text = '[❗] Ban risk, should be undetected \n but anticheat can detect it easily' })
         
         UI.Sections.InfStamina:Toggle({
             Name = "Always Sprint",
@@ -1105,7 +1105,7 @@ local function SetupUI(UI)
                 InfStamina.SetAlwaysSprint(value)
             end
         })
-        UI.Sections.InfStamina:SubLabel{(Text = '[❗] Ban risk, not recommend to use always sprint'
+        UI.Sections.InfStamina:SubLabel({Text = '[❗] Ban risk, not recommend to use always sprint'})
         UI.Sections.InfStamina:Toggle({
             Name = "Restore GUI",
             Default = MovementEnhancements.Config.InfStamina.RestoreGui,
